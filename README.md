@@ -178,3 +178,54 @@ Cada ejercicio deberá resolverse en una rama independiente con nombres siguiend
 Puden obtener un listado del último commit de cada rama ejecutando `git ls-remote`.
 
 Finalmente, se pide a los alumnos leer atentamente y **tener en cuenta** los criterios de corrección provistos [en el campus](https://campusgrado.fi.uba.ar/mod/page/view.php?id=73393).
+
+
+## Resolución
+A continuación se detalla la forma de ejecución de cada ejercicio en particular.
+
+### Ej1
+El primer paso es darle permisos de ejecución al script de bash que permite crear una definición de DockerCompose con una cantidad configurable de clientes:
+```bash
+chmod +x generar-compose.sh  
+```
+Este script se encuentra en la en la raíz del proyecto y recibirá por parámetro el nombre del archivo de salida y la cantidad de clientes esperados:
+```bash
+./generar-compose.sh <nombre_archivo.yaml> <num_clientes>
+```
+
+Este script invoca un subscript de python:
+```bash
+#!/bin/bash
+echo "Nombre del archivo de salida: $1"
+echo "Cantidad de clientes: $2"
+python3 docker-compose-generator.py $1 $2
+```
+
+El script de python `docker-compose-generator.py` es finalmente quien genera el .yaml deseado, y para ello se utiliza el módulo `pyyaml`, por lo que hay que instalarlo de la siguiente forma:
+
+1) Instalar python3-venv para poder crear un entorno virtual:
+```bash
+sudo apt install python3-venv
+```
+2) Crear un Entorno Virtual:
+```bash
+python3 -m venv myenv
+```
+3) Activar el Entorno Virtual:
+```bash
+source myenv/bin/activate
+```
+4) Instalar pyyaml dentro del Entorno Virtual:
+```bash
+pip install pyyaml
+```
+5) En este punto ya se puede correr el script de bash para crear una definición de DockerCompose:
+```bash
+./generar-compose.sh docker-compose-dev.yaml 5
+```
+
+6) Finalmente, cuando se termina de generar los DockerCompose deseados, se desactiva el Entorno Virtual:
+```bash
+deactivate
+```
+OBS: Si ya tenes pyyaml instalado globalmente en tu sistema, el script funcionará sin problemas omitiendo la parte todo lo relacionado al entorno virtual.
