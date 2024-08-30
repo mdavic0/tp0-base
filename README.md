@@ -229,3 +229,31 @@ pip install pyyaml
 deactivate
 ```
 OBS: Si ya tenes pyyaml instalado globalmente en tu sistema, el script funcionará sin problemas omitiendo la parte todo lo relacionado al entorno virtual.
+
+### Ej2
+En este punto se modificó la configuración para inyectar los archivos de configuración desde fuera de los contenedores usando volúmenes de Docker. Los volúmenes permiten que un archivo en tu host sea montado dentro del contenedor, lo que facilita la modificación de archivos como los de configuración sin tener que hacer un nuevo build de las imágenes.
+
+1) Se elimina la linea del Dockerfile del cliente que hace la copia del config.yaml
+```Dockerfile
+# COPY ./client/config.yaml /config.yaml
+```
+2) Se modifica el docker-compose-dev.yaml agregando volúmenes para inyectar los archivos de configuración desde el host dentro de los contenedores.
+```yaml
+volumes:
+    - ./server/config.ini:/config/config.ini
+```
+```yaml
+volumes:
+    - ./client/config.yaml:/config/config.yaml
+```
+
+3) Modificar main.go del cliente y main.py del servidor para que el archivo de configuración se cargue desde el volumen montado:
+
+```go
+v.SetConfigFile("./config/config.yaml")
+```
+```python
+config.read("./config/config.ini")
+```
+
+De este modo los cambios realizados en los archivos config.yaml y config.ini en el host se reflejarán automáticamente dentro de los contenedores sin necesidad de volver a construir las imágenes. La forma de ejecución sigue siendo la misma.
