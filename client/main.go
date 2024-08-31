@@ -3,9 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/op/go-logging"
@@ -113,20 +111,5 @@ func main() {
 	}
 
 	client := common.NewClient(clientConfig)
-	// client.StartClientLoop()
-
-	// Creo el para manejar las signals --> SIGTERM
-	stopChan := make(chan os.Signal, 1)
-	signal.Notify(stopChan, syscall.SIGTERM)
-
-	go func() {
-		// ejecuto el cliente en una goroutine separada, de este modo permito que
-		// el main esté libre para escuchar las signals
-		client.StartClientLoop()
-	}()
-
-	sig := <-stopChan
-	log.Infof("action: signal_received | signal: %v", sig)
-
-	client.Stop()
+	client.StartClientLoop()
 }
