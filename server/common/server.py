@@ -1,6 +1,7 @@
 import socket
 import logging
-
+import signal
+import threading
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -8,21 +9,27 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self._is_running = threading.Event()
+        self._is_running.set()
 
     def run(self):
         """
-        Dummy Server loop
+        Server loop with graceful shutdown handling.
 
-        Server that accept a new connections and establishes a
-        communication with a client. After client with communucation
-        finishes, servers starts to accept new connections again
+        Server that accepts new connections and establishes communication
+        with a client. When a shutdown signal is received, stops accepting new
+        connections and gracefully closes the server.
         """
 
-        # TODO: Modify this program to handle signal to graceful shutdown
-        # the server
-        while True:
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+        # logging.info("Server is running...")
+        while self._is_running.is_set():
+            try:
+                client_sock = self.__accept_new_connection()
+                if client_sock:
+                    self.__handle_client_connection(client_sock)
+            except OSError as e:
+                # This error occurs when the socket is closed during shutdown
+                logging.info("Server socket closed, shutting down...")
 
     def __handle_client_connection(self, client_sock):
         """
@@ -45,14 +52,24 @@ class Server:
 
     def __accept_new_connection(self):
         """
-        Accept new connections
-
-        Function blocks until a connection to a client is made.
-        Then connection created is printed and returned
+        Accept new connections, returns client socket.
+        If the server is shutting down, returns None.
         """
+        try:
+            # Connection arrived
+            logging.info('action: accept_connections | result: in_progress')
+            c, addr = self._server_socket.accept()
+            logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
+            return c
+        except OSError as e:
+            # logging.error(f"action: accept_connections | result: fail | error: {e}")
+            return None
 
-        # Connection arrived
-        logging.info('action: accept_connections | result: in_progress')
-        c, addr = self._server_socket.accept()
-        logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
-        return c
+    def stop(self, *args):
+        """
+        Gracefully stops the server, stops accepting new connections and closes the server socket.
+        """
+        logging.info("action: shutdown_initiated | result: success")
+        self._is_running.clear()
+        self._server_socket.close()
+        logging.info("action: server_stopped | result: success")

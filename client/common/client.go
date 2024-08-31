@@ -48,6 +48,7 @@ func (c *Client) createClientSocket() error {
 			c.config.ID,
 			err,
 		)
+		return err
 	}
 	c.conn = conn
 	return nil
@@ -68,29 +69,35 @@ func (c *Client) StartClientLoop() {
 			return
 		default:
 			// Create the connection the server in every loop iteration. Send an
-			c.createClientSocket()
-
-			// TODO: Modify the send to avoid short-write
-			fmt.Fprintf(
-				c.conn,
-				"[CLIENT %v] Message N°%v\n",
-				c.config.ID,
-				msgID,
-			)
-			msg, err := bufio.NewReader(c.conn).ReadString('\n')
-			c.conn.Close()
-
+			err := c.createClientSocket()
 			if err != nil {
-				log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-					c.config.ID,
-					err,
-				)
+				// Si falló la conexión, se sale del bucle
 				return
 			}
-			log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-				c.config.ID,
-				msg,
-			)
+
+			// TODO: Modify the send to avoid short-write
+			if c.conn != nil {
+				fmt.Fprintf(
+					c.conn,
+					"[CLIENT %v] Message N°%v\n",
+					c.config.ID,
+					msgID,
+				)
+				msg, err := bufio.NewReader(c.conn).ReadString('\n')
+				c.conn.Close()
+
+				if err != nil {
+					log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
+						c.config.ID,
+						err,
+					)
+					return
+				}
+				log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
+					c.config.ID,
+					msg,
+				)
+			}
 		}
 
 		// Wait a time between sending one message and the next one
