@@ -290,3 +290,51 @@ make docker-compose-down
 ```
 
 ### Ej4
+Para verificar el funcionamiento del graceful shutdown en el cliente ejecutar:
+1) Inicializar ambiente de desarrollo
+```bash
+make docker-compose-up
+```
+2) Es importante ejecutar rapidamente este comando para llegar a interrumpir la ejecución antes de que termine el loop del cliente.
+```bash
+docker kill --signal=SIGTERM client1
+```
+3) Se pueden ver los logs que muestran que el cliente recibió la signal SIGTERM y por lo tanto finalizó la ejecución de forma ordenada.
+```bash
+make docker-compose-logs
+```
+
+4) Se puede verificar el exit status de los containers con
+```bash
+docker ps -a
+```
+
+5) Detener los containers y destruir todos los recursos asociados al proyecto que fueron inicializados.
+```bash
+make docker-compose-down
+```
+
+Para verificar el funcionamiento del graceful shutdown en el servidor ejecutar:
+
+1) Inicializar ambiente de desarrollo
+```bash
+make docker-compose-up
+```
+2) Interrumpir la ejecución del servidor .
+```bash
+docker kill --signal=SIGTERM server
+```
+3) Se pueden ver los logs que muestran que el servidor recibió la signal SIGTERM y por lo tanto finalizó la ejecución de forma ordenada. Tambien el client1 va a detectar que no puede establecer conexión con el server y va a finalizar su ejecución.
+```bash
+make docker-compose-logs
+```
+
+4) Se puede verificar el exit status de los containers con
+```bash
+docker ps -a
+```
+
+5) Detener los containers y destruir todos los recursos asociados al proyecto que fueron inicializados.
+```bash
+make docker-compose-down
+```
