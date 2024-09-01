@@ -38,6 +38,12 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
 
+	v.BindEnv("apuesta", "nombre")
+	v.BindEnv("apuesta", "apellido")
+	v.BindEnv("apuesta", "documento")
+	v.BindEnv("apuesta", "nacimiento")
+	v.BindEnv("apuesta", "numero")
+
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
 	// can be loaded from the environment variables so we shouldn't
@@ -90,6 +96,17 @@ func PrintConfig(v *viper.Viper) {
 	)
 }
 
+func CrearApuesta(v *viper.Viper) common.Apuesta {
+	apuesta := common.Apuesta{
+		Nombre:     v.GetString("apuesta.nombre"),
+		Apellido:   v.GetString("apuesta.apellido"),
+		Documento:  v.GetInt("apuesta.documento"),
+		Nacimiento: v.GetInt("apuesta.nacimiento"),
+		Numero:     v.GetInt("apuesta.numero"),
+	}
+	return apuesta
+}
+
 func main() {
 	v, err := InitConfig()
 	if err != nil {
@@ -102,6 +119,11 @@ func main() {
 
 	// Print program config with debugging purposes
 	PrintConfig(v)
+
+	apuesta := CrearApuesta(v)
+
+	// imprimo la apuesta
+	log.Infof("action: apuesta | result: success | nombre: %s | apellido: %s | documento: %v | nacimiento: %v | numero: %v", apuesta.Nombre, apuesta.Apellido, apuesta.Documento, apuesta.Nacimiento, apuesta.Numero)
 
 	clientConfig := common.ClientConfig{
 		ServerAddress: v.GetString("server.address"),
