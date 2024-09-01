@@ -290,6 +290,42 @@ make docker-compose-down
 ```
 
 ### Ej4
+Se implementó el manejo de señales en los archivos client/common/client.go y server/common/server.py para permitir una correcta liberación de los descriptores de archivo cuando se recibe un SIGTERM. Al recibir la señal, se cierran inmediatamente los sockets de comunicación en ambos lados. Además, en el servidor, se deja de aceptar nuevas conexiones una vez que se ha capturado la señal. También se ajustó el tiempo de espera de docker-compose down antes de enviar la señal de terminación, para que se pueda observar el proceso de apagado ordenado.
+
+Para verificar el funcionamiento del cierre graceful en cliente y servidor ejecutar:
+```bash
+make docker-compose-up
+```
+- En otra terminal observar los logs:
+```bash
+make docker-compose-logs
+```
+- En la primera terminal enviar la SIGNAL ejecutando:
+```bash
+make-docker-compose-down
+```
+
+- Se pueden observar los logs:
+
+```bash
+.
+.
+.
+server   | 2024-09-01 17:05:45 INFO     action: receive_message | result: success | ip: 172.25.125.3 | msg: [CLIENT 1] Message N°2
+server   | 2024-09-01 17:05:45 INFO     action: accept_connections | result: in_progress
+client1  | 2024-09-01 17:05:45 INFO     action: receive_message | result: success | client_id: 1 | msg: [CLIENT 1] Message N°2
+client1  | 2024-09-01 17:05:50 INFO     action: signal_received | signal: terminated | client_id: 1
+client1  | 2024-09-01 17:05:50 INFO     action: closing_connection | client_id: 1
+client1  | 2024-09-01 17:05:50 INFO     action: client_stopped | client_id: 1
+client1  | 2024-09-01 17:05:50 INFO     action: stopChan_closed | client_id: 1
+client1 exited with code 0
+server   | 2024-09-01 17:05:50 INFO     action: shutdown_initiated | result: success
+server   | 2024-09-01 17:05:50 INFO     action: server_stopped | result: success
+server exited with code 0
+```
+
+Otra forma de verificar el funcionamiento es:
+
 Para verificar el funcionamiento del graceful shutdown en el cliente ejecutar:
 1) Inicializar ambiente de desarrollo
 ```bash
