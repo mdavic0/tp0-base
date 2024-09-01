@@ -66,6 +66,8 @@ func (c *Client) StartClientLoop() {
 		case sig := <-stopChan:
 			log.Infof("action: signal_received | signal: %v | client_id: %v", sig, c.config.ID)
 			c.Stop()
+			close(stopChan)
+			log.Infof("action: stopChan_closed | client_id: %v", c.config.ID)
 			return
 		default:
 			// Create the connection the server in every loop iteration. Send an

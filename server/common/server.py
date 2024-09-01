@@ -9,8 +9,10 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+
         self._is_running = threading.Event()
         self._is_running.set()
+        signal.signal(signal.SIGTERM, self.stop)
 
     def run(self):
         """
@@ -21,15 +23,10 @@ class Server:
         connections and gracefully closes the server.
         """
 
-        # logging.info("Server is running...")
         while self._is_running.is_set():
-            try:
-                client_sock = self.__accept_new_connection()
-                if client_sock:
-                    self.__handle_client_connection(client_sock)
-            except OSError as e:
-                # This error occurs when the socket is closed during shutdown
-                logging.info("Server socket closed, shutting down...")
+            client_sock = self.__accept_new_connection()
+            if client_sock is not None:
+                self.__handle_client_connection(client_sock)
 
     def __handle_client_connection(self, client_sock):
         """
@@ -71,5 +68,5 @@ class Server:
         """
         logging.info("action: shutdown_initiated | result: success")
         self._is_running.clear()
-        self._server_socket.close()
+        self._server_socket.shutdown(socket.SHUT_RDWR)
         logging.info("action: server_stopped | result: success")
