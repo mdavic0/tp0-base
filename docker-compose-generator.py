@@ -13,6 +13,7 @@ def generate_docker_compose(filename, num_clients):
                     'PYTHONUNBUFFERED=1',
                     'LOGGING_LEVEL=DEBUG'
                 ],
+                'volumes': [ './server/config.ini:/config/config.ini' ],
                 'networks': ['testing_net']
             }
         },
@@ -37,6 +38,7 @@ def generate_docker_compose(filename, num_clients):
                 f'CLI_ID={i}',
                 'CLI_LOG_LEVEL=DEBUG'
             ],
+            'volumes': [ './client/config.yaml:/config/config.yaml' ],
             'networks': ['testing_net'],
             'depends_on': ['server']
         }
