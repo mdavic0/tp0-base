@@ -77,13 +77,15 @@ func (c *Client) StartClientLoop(bet Bet) {
 				return
 			}
 
+			msgSent := bet.ParseToString() + DELIMITER
+
 			// TODO: Modify the send to avoid short-write
 			if c.conn != nil {
-				fmt.Fprintf(
+				fmt.Fprint(
 					c.conn,
-					bet.ParseToString()+DELIMITER,
+					msgSent,
 				)
-				msg, err := bufio.NewReader(c.conn).ReadString(DELIMITER[0])
+				msgReceived, err := bufio.NewReader(c.conn).ReadString(DELIMITER[0])
 				c.conn.Close()
 
 				if err != nil {
@@ -93,10 +95,17 @@ func (c *Client) StartClientLoop(bet Bet) {
 					)
 					return
 				}
-				log.Infof("action: receive_message | result: success | client_id: %v | msg: %v",
-					c.config.ID,
-					msg,
-				)
+				if msgReceived == msgSent {
+					log.Infof("action: apuesta_enviada | result: success | dni: %d | numero: %d",
+						bet.Document,
+						bet.Number,
+					)
+				} else {
+					log.Errorf("action: apuesta_enviada | result: fail | dni: %d | numero: %d",
+						bet.Document,
+						bet.Number,
+					)
+				}
 			}
 		}
 
