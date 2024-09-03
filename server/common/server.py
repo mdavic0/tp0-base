@@ -37,15 +37,13 @@ class Server:
         client socket will also be closed
         """
         try:
-            # TODO: Modify the receive to avoid short-reads
-            msg = client_sock.recv(1024).rstrip().decode('utf-8')
-
+            msg = self.receive_message(client_sock)
+            if msg is None:
+                return
+            
             bet = utils.parse_bet(msg)
 
-            addr = client_sock.getpeername()
-            logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
-            # TODO: Modify the send to avoid short-writes
-            client_sock.send(msg.encode('utf-8'))
+            self.send_message(client_sock, msg)
             
             utils.store_bets([bet])
 
@@ -78,3 +76,39 @@ class Server:
         self._is_running.clear()
         self._server_socket.shutdown(socket.SHUT_RDWR)
         logging.info("action: server_stopped | result: success")
+
+
+    def receive_message(self, client_sock):
+        """
+        Try reading a complete message from client avoiding short-reads
+        """
+        msg = b''
+        recv_all = False
+        while not recv_all:
+
+            packet = client_sock.recv(1024)
+            if not packet:
+                logging.error('action: receive_message | result: fail | error: client closed connection')
+                client_sock.close()
+                return None
+            
+            msg += packet
+
+            if msg.endswith(utils.DELIMITER):
+                recv_all = True
+
+        addr = client_sock.getpeername()
+        logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg.decode("utf-8")}')
+        return msg.decode('utf-8')
+
+
+    def send_message(self, client_sock, msg):
+        """
+        Send a message to a client
+        It avoids short-writes
+        """
+        try:
+            client_sock.sendall(msg.encode('utf-8'))
+        except OSError as e:
+            logging.error(f'action: send_message | result: fail | error: {e}')
+            client_sock.close()

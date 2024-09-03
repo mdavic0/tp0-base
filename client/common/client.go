@@ -2,7 +2,6 @@ package common
 
 import (
 	"bufio"
-	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -54,6 +53,40 @@ func (c *Client) createClientSocket() error {
 	return nil
 }
 
+// Send a message to the server avoiding the short-write problem
+func (c *Client) sendMessage(msg string) error {
+	writer := bufio.NewWriter(c.conn)
+	_, err := writer.WriteString(msg)
+	if err != nil {
+		log.Fatalf("action: send_message | result: fail | client_id: %v | error: %v",
+			c.config.ID,
+			err,
+		)
+		return err
+	}
+	err = writer.Flush()
+	if err != nil {
+		log.Fatalf("action: flush_message | result: fail | client_id: %v | error: %v",
+			c.config.ID,
+			err,
+		)
+		return err
+	}
+	return nil
+}
+
+// Receives a message from the server avoiding the short-read problem
+func (c *Client) receiveMessage() (string, error) {
+	msg, err := bufio.NewReader(c.conn).ReadString(DELIMITER[0])
+	if err != nil {
+		log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
+			c.config.ID,
+			err,
+		)
+	}
+	return msg, err
+}
+
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(bet Bet) {
 	stopChan := make(chan os.Signal, 1)
@@ -67,34 +100,29 @@ func (c *Client) StartClientLoop(bet Bet) {
 			log.Infof("action: signal_received | signal: %v | client_id: %v", sig, c.config.ID)
 			c.Stop()
 			close(stopChan)
-			log.Infof("action: stopChan_closed | client_id: %v", c.config.ID)
 			return
 		default:
 			// Create the connection the server in every loop iteration. Send an
 			err := c.createClientSocket()
 			if err != nil {
-				// Si falló la conexión, se sale del bucle
 				return
 			}
 
-			msgSent := bet.ParseToString() + DELIMITER
-
-			// TODO: Modify the send to avoid short-write
 			if c.conn != nil {
-				fmt.Fprint(
-					c.conn,
-					msgSent,
-				)
-				msgReceived, err := bufio.NewReader(c.conn).ReadString(DELIMITER[0])
-				c.conn.Close()
-
+				msgSent := bet.ParseToString() + DELIMITER
+				err := c.sendMessage(msgSent)
 				if err != nil {
-					log.Errorf("action: receive_message | result: fail | client_id: %v | error: %v",
-						c.config.ID,
-						err,
-					)
 					return
 				}
+
+				// msgReceived, err := bufio.NewReader(c.conn).ReadString(DELIMITER[0])
+				msgReceived, err := c.receiveMessage()
+				if err != nil {
+					return
+				}
+
+				c.conn.Close()
+
 				if msgReceived == msgSent {
 					log.Infof("action: apuesta_enviada | result: success | dni: %d | numero: %d",
 						bet.Document,
@@ -108,10 +136,8 @@ func (c *Client) StartClientLoop(bet Bet) {
 				}
 			}
 		}
-
 		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)
-
 	}
 	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }
