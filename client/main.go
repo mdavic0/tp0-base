@@ -94,6 +94,13 @@ func PrintConfig(v *viper.Viper) {
 		v.GetDuration("loop.period"),
 		v.GetString("log.level"),
 	)
+	log.Infof("action: config | result: success | apuesta_nombre: %s | apuesta_apellido: %s | apuesta_documento: %v | apuesta_nacimiento: %v | apuesta_numero: %v",
+		v.GetString("apuesta.nombre"),
+		v.GetString("apuesta.apellido"),
+		v.GetInt("apuesta.documento"),
+		v.GetString("apuesta.nacimiento"),
+		v.GetInt("apuesta.numero"),
+	)
 }
 
 func CrearApuesta(v *viper.Viper) common.Apuesta {
@@ -101,7 +108,7 @@ func CrearApuesta(v *viper.Viper) common.Apuesta {
 		Nombre:     v.GetString("apuesta.nombre"),
 		Apellido:   v.GetString("apuesta.apellido"),
 		Documento:  v.GetInt("apuesta.documento"),
-		Nacimiento: v.GetInt("apuesta.nacimiento"),
+		Nacimiento: v.GetString("apuesta.nacimiento"),
 		Numero:     v.GetInt("apuesta.numero"),
 	}
 	return apuesta
@@ -133,5 +140,5 @@ func main() {
 	}
 
 	client := common.NewClient(clientConfig)
-	client.StartClientLoop()
+	client.StartClientLoop(apuesta)
 }
