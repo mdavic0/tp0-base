@@ -4,22 +4,22 @@ import "fmt"
 
 const DELIMITER = ";"
 
-type Apuesta struct {
-	Nombre     string
-	Apellido   string
-	Documento  int
-	Nacimiento string
-	Numero     int
-	IDAgencia  int
+type Bet struct {
+	Name      string
+	LastName  string
+	Document  int
+	BirthDate string
+	Number    int
+	Agency    int
 }
 
-func (apuesta *Apuesta) ParseToString() string {
-	return fmt.Sprintf("{Nombre:%s,Apellido:%s,Documento:%d,Nacimiento:%s,Numero:%d,IDAgencia:%d}",
-		apuesta.Nombre,
-		apuesta.Apellido,
-		apuesta.Documento,
-		apuesta.Nacimiento,
-		apuesta.Numero,
-		apuesta.IDAgencia,
+func (apuesta *Bet) ParseToString() string {
+	return fmt.Sprintf("Name:%s,LastName:%s,Document:%d,BirthDate:%s,Number:%d,Agency:%d",
+		apuesta.Name,
+		apuesta.LastName,
+		apuesta.Document,
+		apuesta.BirthDate,
+		apuesta.Number,
+		apuesta.Agency,
 	)
 }

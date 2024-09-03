@@ -38,11 +38,11 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
 
-	v.BindEnv("apuesta", "nombre")
-	v.BindEnv("apuesta", "apellido")
-	v.BindEnv("apuesta", "documento")
-	v.BindEnv("apuesta", "nacimiento")
-	v.BindEnv("apuesta", "numero")
+	v.BindEnv("bet", "name")
+	v.BindEnv("bet", "lastName")
+	v.BindEnv("bet", "document")
+	v.BindEnv("bet", "BirthDate")
+	v.BindEnv("bet", "Number")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -95,23 +95,24 @@ func PrintConfig(v *viper.Viper) {
 		v.GetString("log.level"),
 	)
 	log.Infof("action: config | result: success | apuesta_nombre: %s | apuesta_apellido: %s | apuesta_documento: %v | apuesta_nacimiento: %v | apuesta_numero: %v",
-		v.GetString("apuesta.nombre"),
-		v.GetString("apuesta.apellido"),
-		v.GetInt("apuesta.documento"),
-		v.GetString("apuesta.nacimiento"),
-		v.GetInt("apuesta.numero"),
+		v.GetString("bet.name"),
+		v.GetString("bet.lastName"),
+		v.GetInt("bet.document"),
+		v.GetString("bet.BirthDate"),
+		v.GetInt("bet.Number"),
 	)
 }
 
-func CrearApuesta(v *viper.Viper) common.Apuesta {
-	apuesta := common.Apuesta{
-		Nombre:     v.GetString("apuesta.nombre"),
-		Apellido:   v.GetString("apuesta.apellido"),
-		Documento:  v.GetInt("apuesta.documento"),
-		Nacimiento: v.GetString("apuesta.nacimiento"),
-		Numero:     v.GetInt("apuesta.numero"),
+func NewBet(v *viper.Viper) common.Bet {
+	bet := common.Bet{
+		Name:      v.GetString("bet.name"),
+		LastName:  v.GetString("bet.lastName"),
+		Document:  v.GetInt("bet.document"),
+		BirthDate: v.GetString("bet.BirthDate"),
+		Number:    v.GetInt("bet.Number"),
+		Agency:    v.GetInt("id"),
 	}
-	return apuesta
+	return bet
 }
 
 func main() {
@@ -127,10 +128,7 @@ func main() {
 	// Print program config with debugging purposes
 	PrintConfig(v)
 
-	apuesta := CrearApuesta(v)
-
-	// imprimo la apuesta
-	log.Infof("action: apuesta | result: success | nombre: %s | apellido: %s | documento: %v | nacimiento: %v | numero: %v", apuesta.Nombre, apuesta.Apellido, apuesta.Documento, apuesta.Nacimiento, apuesta.Numero)
+	bet := NewBet(v)
 
 	clientConfig := common.ClientConfig{
 		ServerAddress: v.GetString("server.address"),
@@ -140,5 +138,5 @@ func main() {
 	}
 
 	client := common.NewClient(clientConfig)
-	client.StartClientLoop(apuesta)
+	client.StartClientLoop(bet)
 }

@@ -55,7 +55,7 @@ func (c *Client) createClientSocket() error {
 }
 
 // StartClientLoop Send messages to the client until some time threshold is met
-func (c *Client) StartClientLoop(apuesta Apuesta) {
+func (c *Client) StartClientLoop(bet Bet) {
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -81,7 +81,7 @@ func (c *Client) StartClientLoop(apuesta Apuesta) {
 			if c.conn != nil {
 				fmt.Fprint(
 					c.conn,
-					apuesta.ParseToString()+DELIMITER,
+					bet.ParseToString()+DELIMITER,
 				)
 				msg, err := bufio.NewReader(c.conn).ReadString(DELIMITER[0])
 				c.conn.Close()

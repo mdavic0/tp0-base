@@ -8,9 +8,9 @@ log:
   level: "INFO"
 batch:
   maxAmount: 10
-apuesta:
-  nombre: "Santiago Lionel"
-  apellido: "Lorca"
-  documento: "30904465"
-  nacimiento: "1999-03-17"
-  numero: "7574"
+bet:
+  name: "Santiago Lionel"
+  last_name: "Lorca"
+  document: "30904465"
+  birth_date: "1999-03-17"
+  number: "7574"
