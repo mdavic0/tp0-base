@@ -2,6 +2,7 @@ import socket
 import logging
 import signal
 import threading
+from common import utils
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -38,10 +39,17 @@ class Server:
         try:
             # TODO: Modify the receive to avoid short-reads
             msg = client_sock.recv(1024).rstrip().decode('utf-8')
+
+            bet = utils.parse_bet(msg)
+
             addr = client_sock.getpeername()
             logging.info(f'action: receive_message | result: success | ip: {addr[0]} | msg: {msg}')
             # TODO: Modify the send to avoid short-writes
-            client_sock.send("{}\n".format(msg).encode('utf-8'))
+            client_sock.send(msg.encode('utf-8'))
+            
+            utils.store_bets([bet])
+
+            logging.info(f'action: apuesta_almacenada | result: success | dni: {bet.document} | numero: {bet.number}')
         except OSError as e:
             logging.error("action: receive_message | result: fail | error: {e}")
         finally:

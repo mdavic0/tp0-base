@@ -39,10 +39,10 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("log", "level")
 
 	v.BindEnv("bet", "name")
-	v.BindEnv("bet", "lastName")
+	v.BindEnv("bet", "last_name")
 	v.BindEnv("bet", "document")
-	v.BindEnv("bet", "BirthDate")
-	v.BindEnv("bet", "Number")
+	v.BindEnv("bet", "birth_date")
+	v.BindEnv("bet", "number")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -96,20 +96,20 @@ func PrintConfig(v *viper.Viper) {
 	)
 	log.Infof("action: config | result: success | apuesta_nombre: %s | apuesta_apellido: %s | apuesta_documento: %v | apuesta_nacimiento: %v | apuesta_numero: %v",
 		v.GetString("bet.name"),
-		v.GetString("bet.lastName"),
+		v.GetString("bet.last_name"),
 		v.GetInt("bet.document"),
-		v.GetString("bet.BirthDate"),
-		v.GetInt("bet.Number"),
+		v.GetString("bet.birth_date"),
+		v.GetInt("bet.number"),
 	)
 }
 
 func NewBet(v *viper.Viper) common.Bet {
 	bet := common.Bet{
 		Name:      v.GetString("bet.name"),
-		LastName:  v.GetString("bet.lastName"),
+		LastName:  v.GetString("bet.last_name"),
 		Document:  v.GetInt("bet.document"),
-		BirthDate: v.GetString("bet.BirthDate"),
-		Number:    v.GetInt("bet.Number"),
+		BirthDate: v.GetString("bet.birth_date"),
+		Number:    v.GetInt("bet.number"),
 		Agency:    v.GetInt("id"),
 	}
 	return bet

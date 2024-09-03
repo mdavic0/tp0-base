@@ -79,7 +79,7 @@ func (c *Client) StartClientLoop(bet Bet) {
 
 			// TODO: Modify the send to avoid short-write
 			if c.conn != nil {
-				fmt.Fprint(
+				fmt.Fprintf(
 					c.conn,
 					bet.ParseToString()+DELIMITER,
 				)

@@ -8,6 +8,7 @@ STORAGE_FILEPATH = "./bets.csv"
 """ Simulated winner number in the lottery contest. """
 LOTTERY_WINNER_NUMBER = 7574
 
+DELIMITER = b';'
 
 """ A lottery bet registry. """
 class Bet:
@@ -49,3 +50,15 @@ def load_bets() -> list[Bet]:
         for row in reader:
             yield Bet(row[0], row[1], row[2], row[3], row[4], row[5])
 
+
+def parse_bet(msg: str) -> Bet:
+    """
+    Parse a message:
+    "{Name:str,LastName:str,Document:int,BirthDate:str,Number:int,Agency:int};"
+    """
+    msg = msg[0:-1]
+    msg = msg.strip('{}')
+    keys_and_values = msg.split(',')
+    values = [kv.split(':')[1] for kv in keys_and_values]
+
+    return Bet(values[5], values[0], values[1], values[2], values[3], values[4])

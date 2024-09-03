@@ -13,13 +13,13 @@ type Bet struct {
 	Agency    int
 }
 
-func (apuesta *Bet) ParseToString() string {
-	return fmt.Sprintf("Name:%s,LastName:%s,Document:%d,BirthDate:%s,Number:%d,Agency:%d",
-		apuesta.Name,
-		apuesta.LastName,
-		apuesta.Document,
-		apuesta.BirthDate,
-		apuesta.Number,
-		apuesta.Agency,
+func (bet *Bet) ParseToString() string {
+	return fmt.Sprintf("{Name:%s,LastName:%s,Document:%d,BirthDate:%s,Number:%d,Agency:%d}",
+		bet.Name,
+		bet.LastName,
+		bet.Document,
+		bet.BirthDate,
+		bet.Number,
+		bet.Agency,
 	)
 }
