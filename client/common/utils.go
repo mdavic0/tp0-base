@@ -3,6 +3,7 @@ package common
 import "fmt"
 
 const DELIMITER = ";"
+const ACK_MESSAGE = "ACK" + DELIMITER
 
 type Bet struct {
 	Name      string

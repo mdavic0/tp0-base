@@ -41,9 +41,9 @@ class Server:
             if msg is None:
                 return
             
-            bet = utils.parse_bet(msg)
+            bet = utils.parse_bets(msg)[0]
 
-            self.send_message(client_sock, msg)
+            self.send_message(client_sock, utils.ACK_MESSAGE)
             
             utils.store_bets([bet])
 

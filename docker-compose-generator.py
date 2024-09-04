@@ -1,7 +1,25 @@
 import sys
 import yaml
 
-def generate_docker_compose(filename, num_clients):
+def load_env_file(env_file):
+    env_vars = {}
+    try:
+        with open(env_file, 'r') as file:
+            for line in file:
+                # Ignorar líneas vacías o comentarios
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    key, value = line.split('=', 1)
+                    env_vars[key.strip()] = value.strip()
+    except FileNotFoundError:
+        print(f"Error: {env_file} not found.")
+        sys.exit(1)
+    return env_vars
+
+def generate_docker_compose(filename, num_clients, env_file):
+    # Load environment variables manually from the .env file
+    env_vars = load_env_file(env_file)
+    
     docker_compose = {
         'name': 'tp0',
         'services': {
@@ -30,14 +48,23 @@ def generate_docker_compose(filename, num_clients):
     }
 
     for i in range(1, num_clients + 1):
+        # Prepare the client-specific environment variables
+        client_env = [
+            f'CLI_ID={i}',
+            'CLI_LOG_LEVEL=DEBUG',
+            f'CLI_NOMBRE={env_vars.get(f"CLI{i}_NOMBRE", "")}',
+            f'CLI_APELLIDO={env_vars.get(f"CLI{i}_APELLIDO", "")}',
+            f'CLI_DOCUMENTO={env_vars.get(f"CLI{i}_DOCUMENTO", "")}',
+            f'CLI_NACIMIENTO={env_vars.get(f"CLI{i}_NACIMIENTO", "")}',
+            f'CLI_NUMERO={env_vars.get(f"CLI{i}_NUMERO", "")}',
+        ]
+
+        # Add the client service to docker-compose configuration
         docker_compose['services'][f'client{i}'] = {
             'container_name': f'client{i}',
             'image': 'client:latest',
             'entrypoint': '/client',
-            'environment': [
-                f'CLI_ID={i}',
-                'CLI_LOG_LEVEL=DEBUG'
-            ],
+            'environment': client_env,
             'volumes': [ './client/config.yaml:/config/config.yaml' ],
             'networks': ['testing_net'],
             'depends_on': ['server']
@@ -63,4 +90,4 @@ if __name__ == "__main__":
         print("Error: <num_clients> must be at least 1.")
         sys.exit(1)
 
-    generate_docker_compose(filename, num_clients)
+    generate_docker_compose(filename, num_clients, "./client/.env")

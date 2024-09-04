@@ -87,6 +87,20 @@ func (c *Client) receiveMessage() (string, error) {
 	return msg, err
 }
 
+func (c *Client) verifyBetResult(receivedMsg string, bet Bet) {
+	if receivedMsg == ACK_MESSAGE {
+		log.Infof("action: apuesta_enviada | result: success | dni: %d | numero: %d",
+			bet.Document,
+			bet.Number,
+		)
+	} else {
+		log.Errorf("action: apuesta_enviada | result: fail | dni: %d | numero: %d",
+			bet.Document,
+			bet.Number,
+		)
+	}
+}
+
 // StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(bet Bet) {
 	stopChan := make(chan os.Signal, 1)
@@ -102,39 +116,23 @@ func (c *Client) StartClientLoop(bet Bet) {
 			close(stopChan)
 			return
 		default:
-			// Create the connection the server in every loop iteration. Send an
-			err := c.createClientSocket()
+			// Create the connection the server in every loop iteration.
+			c.createClientSocket()
+
+			msgSent := bet.ParseToString() + DELIMITER
+			err := c.sendMessage(msgSent)
 			if err != nil {
 				return
 			}
 
-			if c.conn != nil {
-				msgSent := bet.ParseToString() + DELIMITER
-				err := c.sendMessage(msgSent)
-				if err != nil {
-					return
-				}
-
-				// msgReceived, err := bufio.NewReader(c.conn).ReadString(DELIMITER[0])
-				msgReceived, err := c.receiveMessage()
-				if err != nil {
-					return
-				}
-
-				c.conn.Close()
-
-				if msgReceived == msgSent {
-					log.Infof("action: apuesta_enviada | result: success | dni: %d | numero: %d",
-						bet.Document,
-						bet.Number,
-					)
-				} else {
-					log.Errorf("action: apuesta_enviada | result: fail | dni: %d | numero: %d",
-						bet.Document,
-						bet.Number,
-					)
-				}
+			msgReceived, err := c.receiveMessage()
+			if err != nil {
+				return
 			}
+
+			c.conn.Close()
+
+			c.verifyBetResult(msgReceived, bet)
 		}
 		// Wait a time between sending one message and the next one
 		time.Sleep(c.config.LoopPeriod)

@@ -9,6 +9,7 @@ STORAGE_FILEPATH = "./bets.csv"
 LOTTERY_WINNER_NUMBER = 7574
 
 DELIMITER = b';'
+ACK_MESSAGE = "ACK" + DELIMITER.decode()
 
 """ A lottery bet registry. """
 class Bet:
@@ -51,12 +52,27 @@ def load_bets() -> list[Bet]:
             yield Bet(row[0], row[1], row[2], row[3], row[4], row[5])
 
 
+def parse_bets(msg: str) -> list[Bet]:
+    """
+    Parse a message:
+    "{{Name:str,LastName:str,Document:int,BirthDate:str,Number:int,Agency:int},{apuesta},...,{otra apuesta}};"
+    """
+    bets = []
+   
+    msg = msg[1:-2]
+
+    bet_entries = msg.split('},{')
+    for bet_entry in bet_entries:
+        bet = parse_bet(bet_entry)
+        bets.append(bet)
+
+    return bets
+
 def parse_bet(msg: str) -> Bet:
     """
     Parse a message:
     "{Name:str,LastName:str,Document:int,BirthDate:str,Number:int,Agency:int};"
     """
-    msg = msg[0:-1]
     msg = msg.strip('{}')
     keys_and_values = msg.split(',')
     values = [kv.split(':')[1] for kv in keys_and_values]

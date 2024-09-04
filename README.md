@@ -377,3 +377,44 @@ make docker-compose-down
 
 
 ### Ej5
+Se definieron las variables de entorno en el archivo /client/.env para la apuesta de prueba (NOMBRE, APELLIDO, DOCUMENTO, NACIMIENTO y NUMERO). En este punto cada Agencia tiene un unico cliente, cada cliente tiene sus datos. De este modo se modifica el script que genera el archivo docker compose para cargar los datos del archivo .env para cada cliente segun corresponda. De este modo se puede seguir ejecutando normalmente como se venia haciendo:  
+```bash
+make docker-compose-up
+```
+
+#### Protocolo de comunicación 
+El protocolo de comunicación utilizado implica el intercambio de mensajes en formato de strings, separando cada mensaje utilizando un delimitador.
+##### Elección del delimitador
+Para la elección del delimitador se analizaron los datos provistos en .data, los cuales son 5 archivos csv. De este modo:
+```bash
+grep 'c' *.csv | wc -l
+```
+Es decir, buscar todas las líneas que contienen el carácter 'c' en los archivos .csv y contar cuántas veces aparece en total.
+ALgunos de los delimitadores probados fueron:
+```bash
+mdavic0@mdavic0-Legion-5-17ACH6H:~/Desktop/Sistemas Distribuidos I/tp0-base/.data$ grep '~' *.csv | wc -l
+0
+mdavic0@mdavic0-Legion-5-17ACH6H:~/Desktop/Sistemas Distribuidos I/tp0-base/.data$ grep ':' *.csv | wc -l
+0
+mdavic0@mdavic0-Legion-5-17ACH6H:~/Desktop/Sistemas Distribuidos I/tp0-base/.data$ grep ' ' *.csv | wc -l
+56688
+mdavic0@mdavic0-Legion-5-17ACH6H:~/Desktop/Sistemas Distribuidos I/tp0-base/.data$ grep '\n' *.csv | wc -l
+62772
+mdavic0@mdavic0-Legion-5-17ACH6H:~/Desktop/Sistemas Distribuidos I/tp0-base/.data$ grep ';' *.csv | wc -l
+0
+```
+Finalmente elijo el delimitador ';'.
+
+
+##### Formato de mensajes
+- Cliente a Servidor: El cliente envía datos relacionados con apuestas. Cada mensaje comienza con `{` y finaliza con `};`, se puede ver como una lista de apuestas separadas por `,` donde cada apuesta está encapsulada dentro de llaves {}. Los parámetros de cada apuesta están a su vez separados por comas y representan pares clave-valor. El mensaje completo termina con el delimitador `;`. 
+
+    Ejemplo de un mensaje:
+    ```bash
+    {Name:str,LastName:str,Document:int,BirthDate:str,Number:int,Agency:int},{apuesta},...,{otra apuesta};
+    ```
+    
+
+    Si bien en este ejercicio, cada mensaje solo contiene una única apuesta, se flexibiliza el protocolo pensando en ejercicios siguientes, permitiendo que cada mensaje pueda contener varias apuestas.
+
+ - Servidor a Cliente: El servidor confirma la recepción correcta de la apuesta. Esta confirmación se realiza enviando un mensaje ACK del tipo "ACK;".
