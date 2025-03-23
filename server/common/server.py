@@ -28,7 +28,7 @@ class Server:
                 self.__handle_client_connection(client_sock)
             except OSError as e:
                 if self._should_terminate and e.errno == 9:  # Bad file descriptor
-                    logging.info("action: accept_connections | result: socket_closed | reason: graceful_shutdown")
+                    logging.info("action: accept_connections | result: fail | reason: graceful_shutdown")
                 else:
                     logging.error(f"action: accept_connections | result: fail | error: {e}")
                 break
@@ -70,6 +70,6 @@ class Server:
         return c
 
     def _handle_sigterm(self, signum, frame):
-        logging.info('action: receive_signal| source: server| signal: SIGTERM')
+        logging.info('action: receive_signal | result: success | source: server| signal: SIGTERM')
         self._should_terminate = True
         self._server_socket.close()
