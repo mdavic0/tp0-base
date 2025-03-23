@@ -1,48 +1,47 @@
 import sys
-import yaml
+
 
 def generate_docker_compose(filename, num_clients):
-    docker_compose = {
-        'name': 'tp0',
-        'services': {
-            'server': {
-                'container_name': 'server',
-                'image': 'server:latest',
-                'entrypoint': 'python3 /main.py',
-                'environment': [
-                    'PYTHONUNBUFFERED=1',
-                    'LOGGING_LEVEL=DEBUG'
-                ],
-                'networks': ['testing_net']
-            }
-        },
-        'networks': {
-            'testing_net': {
-                'ipam': {
-                    'driver': 'default',
-                    'config': [
-                        {'subnet': '172.25.125.0/24'}
-                    ]
-                }
-            }
-        }
-    }
+    yaml_content = """name: tp0
+services:
+  server:
+    container_name: server
+    image: server:latest
+    entrypoint: python3 /main.py
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOGGING_LEVEL=DEBUG
+    networks:
+      - testing_net
+"""
 
     for i in range(1, num_clients + 1):
-        docker_compose['services'][f'client{i}'] = {
-            'container_name': f'client{i}',
-            'image': 'client:latest',
-            'entrypoint': '/client',
-            'environment': [
-                f'CLI_ID={i}',
-                'CLI_LOG_LEVEL=DEBUG'
-            ],
-            'networks': ['testing_net'],
-            'depends_on': ['server']
-        }
+        yaml_content += f"""
+  client{i}:
+    container_name: client{i}
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID={i}
+      - CLI_LOG_LEVEL=DEBUG
+    networks:
+      - testing_net
+    depends_on:
+      - server
+"""
 
-    with open(filename, 'w') as file:
-        yaml.dump(docker_compose, file, sort_keys=False)
+    yaml_content += """
+networks:
+  testing_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.25.125.0/24
+"""
+
+    with open(filename, "w") as file:
+        file.write(yaml_content)
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
