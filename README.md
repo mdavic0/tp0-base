@@ -178,3 +178,31 @@ Se espera que se redacte una sección del README en donde se indique cómo ejecu
 Se proveen [pruebas automáticas](https://github.com/7574-sistemas-distribuidos/tp0-tests) de caja negra. Se exige que la resolución de los ejercicios pase tales pruebas, o en su defecto que las discrepancias sean justificadas y discutidas con los docentes antes del día de la entrega. El incumplimiento de las pruebas es condición de desaprobación, pero su cumplimiento no es suficiente para la aprobación. Respetar las entradas de log planteadas en los ejercicios, pues son las que se chequean en cada uno de los tests.
 
 La corrección personal tendrá en cuenta la calidad del código entregado y casos de error posibles, se manifiesten o no durante la ejecución del trabajo práctico. Se pide a los alumnos leer atentamente y **tener en cuenta** los criterios de corrección informados  [en el campus](https://campusgrado.fi.uba.ar/mod/page/view.php?id=73393).
+
+## Resolución
+A continuación se detalla la forma de ejecución y explicación de cada ejercicio en particular.
+
+### Ej1
+El primer paso es darle permisos de ejecución al script de bash que permite crear una definición de DockerCompose con una cantidad configurable de clientes:
+```bash
+chmod +x generar-compose.sh  
+```
+Este script se encuentra en la en la raíz del proyecto y recibirá por parámetro el nombre del archivo de salida y la cantidad de clientes esperados:
+```bash
+./generar-compose.sh <nombre_archivo.yaml> <num_clientes>
+```
+
+Este script invoca un subscript de python:
+```bash
+#!/bin/bash
+echo "Nombre del archivo de salida: $1"
+echo "Cantidad de clientes: $2"
+python3 docker-compose-generator.py $1 $2
+```
+
+El script de python `docker-compose-generator.py` es finalmente quien genera el .yaml deseado
+
+Para correr el script de bash y crear una definición de DockerCompose ejecutar:
+```bash
+./generar-compose.sh docker-compose-dev.yaml 5
+```
