@@ -1,17 +1,10 @@
-#!/bin/bash
 
-# Configuración
-SERVER_HOSTNAME="server"
-NETWORK_NAME="tp0_testing_net" 
-TEST_MESSAGE="Hello, EchoServer!"
-EXPECTED_RESPONSE="$TEST_MESSAGE"
-SERVER_PORT=12345
+MESSAGE="Hello, server!"
 
+RESPONSE=$(docker run --rm --network tp0_testing_net alpine/netcat server 12345 <<< "$MESSAGE")
 
-ACTUAL_RESPONSE=$(docker run --rm --network "$NETWORK_NAME" busybox:latest sh -c "echo '$TEST_MESSAGE' | nc -w 2 $SERVER_HOSTNAME $SERVER_PORT")
-
-if [ "$ACTUAL_RESPONSE" == "$EXPECTED_RESPONSE" ]; then
-  echo "action: test_echo_server | result: success"
+if [ "$RESPONSE" == "$MESSAGE" ]; then
+    echo "action: test_echo_server | result: success"
 else
-  echo "action: test_echo_server | result: fail"
+    echo "action: test_echo_server | result: fail"
 fi
