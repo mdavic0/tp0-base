@@ -57,8 +57,8 @@ if __name__ == "__main__":
         print("Error: <num_clients> must be an integer.")
         sys.exit(1)
 
-    if num_clients < 1:
-        print("Error: <num_clients> must be at least 1.")
+    if num_clients < 0:
+        print("Error: <num_clients> must be a non-negative integer.")
         sys.exit(1)
 
     generate_docker_compose(filename, num_clients)
