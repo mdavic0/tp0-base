@@ -259,3 +259,39 @@ make docker-compose-up
 ```bash
 make docker-compose-down
 ```
+
+Claro, acá tenés **todo el contenido del archivo `.md` completo**, listo para que lo copies y pegues directamente en tu documento:
+
+---
+
+### Ej4
+
+En este ejercicio se implementó un manejo graceful de finalización para los contenedores de cliente y servidor. El objetivo fue que, ante una señal de `SIGTERM`, ambos servicios puedan finalizar de forma ordenada, liberar recursos y registrar un mensaje de salida sin errores.
+
+#### Servidor
+Se incorporó el manejo de la señal `SIGTERM` utilizando el módulo `signal`. Al recibir la señal, el servidor:
+- Cierra el socket de escucha
+- Interrumpe el bucle principal de aceptación de conexiones
+- Emite un log con el siguiente formato:
+```python
+logging.info("action: receive_signal | result: success | container: server | signal: SIGTERM")
+```
+- Finaliza con un mensaje:
+```python
+logging.info("action: exit | result: success | source: server")
+```
+
+Además, se evitó que el cierre del socket genere un error confuso (`Bad file descriptor`) mediante el chequeo del código de error y el estado de terminación.
+
+#### Cliente
+El cliente fue modificado para capturar `SIGTERM` usando `os/signal` y `context`. Se introdujo un `context.WithCancel()` que permite salir del bucle principal de envío de mensajes. Al recibir la señal, el cliente:
+- Emite un log estructurado:
+```go
+log.Println("action: receive_signal | result: success | container: client1 | signal: SIGTERM")
+```
+- Finaliza el loop y escribe:
+```go
+log.Println("action: exit | result: success | source: client1")
+```
+
+Por último, aumenté a 3 segundos el tiempo de espera antes de matar forzosamente un contenedor. Para esto modifiqué en el Makefile el flag -t, ya que si el tiempo de espera es muy corto, puede que el proceso no alcance a hacer el "shutdown limpio".
