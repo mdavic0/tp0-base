@@ -58,7 +58,7 @@ func (c *Client) StartClientLoop(ctx context.Context) {
 	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
 		select {
 		case <-ctx.Done():
-			log.Infof(`action: exit | result: success | source: client_id: %v| reason: signal | signal: SIGTERM`, c.config.ID)
+			log.Infof(`action: exit | result: success | container: client_id: %v| reason: signal | signal: SIGTERM`, c.config.ID)
 			return
 		default:
 			// Create the connection the server in every loop iteration. Send an

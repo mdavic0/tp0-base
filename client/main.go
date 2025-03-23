@@ -119,7 +119,7 @@ func main() {
 
 	go func() {
 		<-signalChan
-		log.Infof(`action: receive_signal | result: success | source: client_id: %v| signal: SIGTERM`, clientConfig.ID)
+		log.Infof(`action: receive_signal | result: success | container: client_id: %v| signal: SIGTERM`, clientConfig.ID)
 		cancel()
 	}()
 

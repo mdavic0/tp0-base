@@ -33,7 +33,7 @@ class Server:
                     logging.error(f"action: accept_connections | result: fail | error: {e}")
                 break
         
-        logging.info('action: exit | result: success | source: server')
+        logging.info('action: exit | result: success | container: server')
 
         
     def __handle_client_connection(self, client_sock):
@@ -70,6 +70,6 @@ class Server:
         return c
 
     def _handle_sigterm(self, signum, frame):
-        logging.info('action: receive_signal | result: success | source: server | signal: SIGTERM')
+        logging.info('action: receive_signal | result: success | container: server | signal: SIGTERM')
         self._should_terminate = True
         self._server_socket.close()
