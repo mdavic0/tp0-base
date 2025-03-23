@@ -1,6 +1,6 @@
 import socket
 import logging
-
+import signal
 
 class Server:
     def __init__(self, port, listen_backlog):
@@ -8,6 +8,8 @@ class Server:
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
+        self._should_terminate = False
+        signal.signal(signal.SIGTERM, self._handle_sigterm)
 
     def run(self):
         """
@@ -20,10 +22,20 @@ class Server:
 
         # TODO: Modify this program to handle signal to graceful shutdown
         # the server
-        while True:
-            client_sock = self.__accept_new_connection()
-            self.__handle_client_connection(client_sock)
+        while not self._should_terminate:
+            try:
+                client_sock = self.__accept_new_connection()
+                self.__handle_client_connection(client_sock)
+            except OSError as e:
+                if self._should_terminate and e.errno == 9:  # Bad file descriptor
+                    logging.info("action: accept_connections | result: socket_closed | reason: graceful_shutdown")
+                else:
+                    logging.error(f"action: accept_connections | result: fail | error: {e}")
+                break
+        
+        logging.info('action: exit| result: success| source: server')
 
+        
     def __handle_client_connection(self, client_sock):
         """
         Read message from a specific client socket and closes the socket
@@ -56,3 +68,8 @@ class Server:
         c, addr = self._server_socket.accept()
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
         return c
+
+    def _handle_sigterm(self, signum, frame):
+        logging.info('action: receive_signal| source: server| signal: SIGTERM')
+        self._should_terminate = True
+        self._server_socket.close()
