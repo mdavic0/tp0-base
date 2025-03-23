@@ -33,7 +33,7 @@ class Server:
                     logging.error(f"action: accept_connections | result: fail | error: {e}")
                 break
         
-        logging.info('action: exit | result: success| source: server')
+        logging.info('action: exit | result: success | source: server')
 
         
     def __handle_client_connection(self, client_sock):
