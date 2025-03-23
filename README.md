@@ -228,3 +228,34 @@ volumes:
 Por último eliminé la variable de entorno de `LOGGING_LEVEL` y `CLI_LOG_LEVEL` del docker compose para evitar que sobrescriban los valores de los archivos de configuración.
 
 De este modo los cambios realizados en los archivos config.yaml y config.ini en el host se reflejarán automáticamente dentro de los contenedores sin necesidad de volver a construir las imágenes. La forma de ejecución sigue siendo la misma.
+
+### Ej3
+En este punto se crea un script validar-echo-server.sh que valida el funcionamiento del EchoServer utilizando netcat desde un contenedor Docker en la misma network que el servidor.
+
+El script crea un contenedor temporal basado en busybox, que incluye algunas utilidades básicas de Unix, entre ellas sh (shell), y nc (netcat), y se usa el comando netcat (nc) para enviar el mensaje al servidor. 
+Finalmente se compara la respuesta recibida con el mensaje enviado. Si coinciden, se imprime
+```bash
+ "action: test_echo_server | result: success"
+ ```
+ de lo contrario
+ ```bash
+ "action: test_echo_server | result: fail"
+```
+
+Para ejecutar el script:
+1) Le damos permisos de ejecución aL script
+```bash
+chmod +x validar-echo-server.sh  
+```
+2) Se inicializa el ambiente de desarrollo
+```bash
+make docker-compose-up
+```
+3) Ejecutamos el script para validar el funcionamiento del echo server
+```bash
+./validar-echo-server.sh
+```
+4) Detener los containers y destruir todos los recursos asociados al proyecto que fueron inicializados.
+```bash
+make docker-compose-down
+```
