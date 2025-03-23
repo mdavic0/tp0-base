@@ -295,3 +295,35 @@ log.Println("action: exit | result: success | source: client1")
 ```
 
 Por último, aumenté a 3 segundos el tiempo de espera antes de matar forzosamente un contenedor. Para esto modifiqué en el Makefile el flag -t, ya que si el tiempo de espera es muy corto, puede que el proceso no alcance a hacer el "shutdown limpio".
+
+### Ej5
+
+Considerando que voy a tener que modificar el protocolo en los puntos que siguen, planteo desde el inicio un protocolo que sea adaptable facilmente.
+
+El protocolo implementado define un formato simple, eficiente y extensible para el intercambio de mensajes entre cliente y servidor, basado en texto plano estructurado y encabezados binarios fijos.
+
+Cada mensaje intercambiado sigue la siguiente estructura:
+
+[4 bytes - longitud total] [2 bytes - tipo de mensaje] [16 bytes - ID del mensaje] [Payload en texto plano estilo JSON]
+
+#### Detalle de cada campo
+
+- **Longitud total (4 bytes)**: número entero sin signo que indica la cantidad total de bytes a leer a continuación, incluyendo tipo, ID y payload.
+- **Tipo de mensaje (2 bytes)**: entero sin signo que identifica el tipo de mensaje:
+  - `1` → Apuesta individual
+  - `2` → ACK (confirmación)
+  - `3` ... proximamente
+- **ID de mensaje (16 bytes)**: identificador único por mensaje. Es utilizado para correlacionar ACKs con sus mensajes originales. Probablemente use uuid o hash md5 del contenido del mensaje.
+- **Payload**: cuerpo del mensaje en formato texto plano estilo JSON (sin comillas, ni claves duplicadas). Por ejemplo:
+
+    Payload de una apuesta:
+
+    ```
+    {nombre:Santiago,apellido:Lorca,dni:30904465,nacimiento:1999-03-17,numero:7574}
+    ```
+
+    Payload de un ack:
+    ```
+    {result:success}
+    ```
+
