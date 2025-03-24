@@ -260,8 +260,6 @@ make docker-compose-up
 make docker-compose-down
 ```
 
-Claro, acá tenés **todo el contenido del archivo `.md` completo**, listo para que lo copies y pegues directamente en tu documento:
-
 ---
 
 ### Ej4
@@ -298,32 +296,90 @@ Por último, aumenté a 3 segundos el tiempo de espera antes de matar forzosamen
 
 ### Ej5
 
-Considerando que voy a tener que modificar el protocolo en los puntos que siguen, planteo desde el inicio un protocolo que sea adaptable facilmente.
+Considerando que en los próximos ejercicios se requerirá el envío de múltiples apuestas y otro tipo de mensajes, se diseñó desde el inicio un **protocolo de comunicación simple, binario y extensible** que permita adaptarse sin modificar la estructura fundamental del sistema.
 
-El protocolo implementado define un formato simple, eficiente y extensible para el intercambio de mensajes entre cliente y servidor, basado en texto plano estructurado y encabezados binarios fijos.
+---
 
-Cada mensaje intercambiado sigue la siguiente estructura:
+### Protocolo de comunicación
 
-[4 bytes - longitud total] [2 bytes - tipo de mensaje] [16 bytes - ID del mensaje] [Payload en texto plano estilo JSON]
+El protocolo implementado define un formato mixto (binario + texto plano), pensado para:
+- Detectar y manejar short-read/short-write
+- Identificar mensajes
+- Separar la semántica (tipo) del contenido (payload)
+- Facilitar la trazabilidad entre mensajes y sus respuestas
+
+---
+
+#### Estructura del mensaje
+
+```
+[4 bytes - longitud total]
+[2 bytes - tipo de mensaje]
+[16 bytes - ID del mensaje]
+[payload en texto plano estilo JSON]
+```
+
+---
 
 #### Detalle de cada campo
 
-- **Longitud total (4 bytes)**: número entero sin signo que indica la cantidad total de bytes a leer a continuación, incluyendo tipo, ID y payload.
-- **Tipo de mensaje (2 bytes)**: entero sin signo que identifica el tipo de mensaje:
+- **Longitud total (4 bytes)**: entero sin signo (big-endian). Indica el largo total del mensaje **desde el campo "tipo" hasta el final del payload** (excluye estos 4 bytes).
+- **Tipo de mensaje (2 bytes)**:
   - `1` → Apuesta individual
-  - `2` → ACK (confirmación)
-  - `3` ... proximamente
-- **ID de mensaje (16 bytes)**: identificador único por mensaje. Es utilizado para correlacionar ACKs con sus mensajes originales. Probablemente use uuid o hash md5 del contenido del mensaje.
-- **Payload**: cuerpo del mensaje en formato texto plano estilo JSON (sin comillas, ni claves duplicadas). Por ejemplo:
+  - `2` → ACK (respuesta a una apuesta)
+  - `3, 4, ...` → (reservado para chunks u otros mensajes futuros)
+- **ID del mensaje (16 bytes)**: identificador único generado por el cliente, calculado como el **hash MD5 del payload**. Se utiliza para correlacionar respuestas del servidor (ACK) con el mensaje original a modo de uuid.
+- **Payload**: texto plano con formato estilo JSON (sin comillas, sin claves anidadas). Ejemplos:
 
-    Payload de una apuesta:
+  Apuesta:
+  ```
+  {agency:1,nombre:Santiago,apellido:Lorca,dni:30904465,nacimiento:1999-03-17,numero:7574}
+  ```
 
-    ```
-    {nombre:Santiago,apellido:Lorca,dni:30904465,nacimiento:1999-03-17,numero:7574}
-    ```
+  ACK:
+  ```
+  {result:success}
+  ```
 
-    Payload de un ack:
-    ```
-    {result:success}
-    ```
+---
 
+### Short Read y Short Write
+
+#### Cliente
+
+- **Short Read**: al leer datos del socket, se utiliza la función `readExactly(...)`, que hace `Read()` en bucle hasta recibir la cantidad exacta de bytes. Esto evita que un mensaje parcial se interprete como completo.
+  
+- **Short Write**: se implementó la función `writeExactly(...)`, que garantiza que todo el mensaje se escriba completamente al socket, sin depender de que `Write()` lo haga en una sola llamada.
+
+#### Servidor
+
+- **Short Read**: se implementó `recv_all(...)`, una función equivalente que hace `recv()` en bucle hasta completar los N bytes requeridos (headers + payload).
+  
+- **Short Write**: en el servidor se utiliza `sendall()`, que internamente maneja la escritura completa de datos sobre sockets en Python. Esto garantiza que los ACKs se envíen enteros, sin cortes.
+
+---
+
+### Decisiones de implementación relevantes
+
+- **Uso de `net.Conn.Write(...)` en lugar de `fmt.Fprintf(...)`**:  
+  Aunque `fmt.Fprintf()` puede ser útil para logs o comandos tipo texto, el cliente necesita enviar **mensajes binarios estructurados** (con campos como `uint32`, `uint16`, `[]byte`...), por lo que `Write()` es más adecuado, seguro y controlado.
+
+- **Separación de responsabilidades**:
+  - `main.go` se encarga de configurar y orquestar el cliente
+  - `client.go` encapsula la lógica de comunicación
+  - `utils.go` define la estructura `Bet` y puede expandirse para manejar otros tipos de mensaje
+
+- **Logging estructurado y trazable**:
+  Se implementaron logs del tipo:
+  - `apuesta_enviada | result: in_progress`
+  - `receive_ack | result: success | payload: ...`
+  - `apuesta_enviada | result: success/fail | id: ...`
+
+  Esto permite seguir fácilmente cada mensaje a lo largo del sistema.
+
+- **Design for extension**:
+  El protocolo fue pensado desde el principio para admitir:
+  - Envío de chunks de apuestas
+  - Nuevos tipos de mensajes
+  - ACKs individuales o agrupados
+  - Metadata adicional sin romper compatibilidad (ej: cuando me di cuenta que necesitaba enviar el agency, simplemente agregué ese campo al payload de la apuesta sin tener que hacer modificaciones mayores...)
