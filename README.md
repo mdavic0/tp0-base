@@ -260,10 +260,6 @@ make docker-compose-up
 make docker-compose-down
 ```
 
-Claro, acá tenés **todo el contenido del archivo `.md` completo**, listo para que lo copies y pegues directamente en tu documento:
-
----
-
 ### Ej4
 
 En este ejercicio se implementó un manejo graceful de finalización para los contenedores de cliente y servidor. El objetivo fue que, ante una señal de `SIGTERM`, ambos servicios puedan finalizar de forma ordenada, liberar recursos y registrar un mensaje de salida sin errores.
