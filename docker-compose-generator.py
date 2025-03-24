@@ -1,6 +1,5 @@
 import sys
 
-
 def generate_docker_compose(filename, num_clients):
     yaml_content = """name: tp0
 services:
@@ -16,7 +15,17 @@ services:
       - testing_net
 """
 
+    # Datos de ejemplo para apuestas
+    example_data = [
+        ("Santiago", "Lorca", "30904465", "1999-03-17", "7574"),
+        ("Ana", "Gómez", "11111111", "1990-01-01", "1234"),
+        ("Luis", "Fernandez", "22222222", "1985-05-10", "5678"),
+        ("Carla", "Mendez", "33333333", "1993-08-15", "8888"),
+        ("Diego", "Ramirez", "44444444", "1988-12-20", "4321")
+    ]
+
     for i in range(1, num_clients + 1):
+        nombre, apellido, documento, nacimiento, numero = example_data[(i - 1) % len(example_data)]
         yaml_content += f"""
   client{i}:
     container_name: client{i}
@@ -24,6 +33,11 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID={i}
+      - CLI_APUESTA_NOMBRE={nombre}
+      - CLI_APUESTA_APELLIDO={apellido}
+      - CLI_APUESTA_DOCUMENTO={documento}
+      - CLI_APUESTA_NACIMIENTO={nacimiento}
+      - CLI_APUESTA_NUMERO={numero}
     volumes:
       - ./client/config.yaml:/config.yaml
     networks:
@@ -43,7 +57,6 @@ networks:
 
     with open(filename, "w") as file:
         file.write(yaml_content)
-
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
