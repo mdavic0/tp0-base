@@ -3,9 +3,22 @@ import logging
 import signal
 from common.utils import Bet, store_bets, load_bets, has_won
 
+# Message types
+MSG_TYPE_BET = 1
+MSG_TYPE_ACK = 2
+MSG_TYPE_BATCH = 3
+MSG_TYPE_FINISHED = 4
+MSG_TYPE_QUERY_WINNERS = 5
+MSG_TYPE_WINNERS_RESPONSE = 6
+
+# Binary protocol sizes
+HEADER_TOTAL_LEN_SIZE = 4
+HEADER_TYPE_SIZE = 2
+HEADER_ID_SIZE = 16
+HEADER_TOTAL_SIZE = HEADER_TYPE_SIZE + HEADER_ID_SIZE
+
 class Server:
     def __init__(self, port, listen_backlog):
-        # Initialize server socket
         self._server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
@@ -44,8 +57,6 @@ class Server:
         Function blocks until a connection to a client is made.
         Then connection created is printed and returned
         """
-
-        # Connection arrived
         logging.info('action: accept_connections | result: in_progress')
         c, addr = self._server_socket.accept()
         logging.info(f'action: accept_connections | result: success | ip: {addr[0]}')
@@ -58,23 +69,23 @@ class Server:
 
     def __handle_client_connection(self, client_sock):
         try:
-            raw_len = recv_all(client_sock, 4)
+            raw_len = recv_all(client_sock, HEADER_TOTAL_LEN_SIZE)
             total_len = int.from_bytes(raw_len, byteorder='big')
 
-            raw_type = recv_all(client_sock, 2)
+            raw_type = recv_all(client_sock, HEADER_TYPE_SIZE)
             msg_type = int.from_bytes(raw_type, byteorder='big')
 
-            msg_id = recv_all(client_sock, 16)
-            payload_len = total_len - 2 - 16
+            msg_id = recv_all(client_sock, HEADER_ID_SIZE)
+            payload_len = total_len - HEADER_TOTAL_SIZE
             payload_raw = recv_all(client_sock, payload_len)
 
-            if msg_type == 1:
+            if msg_type == MSG_TYPE_BET:
                 self.__handle_single_bet(client_sock, msg_id, payload_raw)
-            elif msg_type == 3:
+            elif msg_type == MSG_TYPE_BATCH:
                 self.__handle_batch(client_sock, msg_id, payload_raw)
-            elif msg_type == 4:
+            elif msg_type == MSG_TYPE_FINISHED:
                 self.__handle_finished_notification(client_sock, msg_id, payload_raw)
-            elif msg_type == 5:
+            elif msg_type == MSG_TYPE_QUERY_WINNERS:
                 self.__handle_query_winners(client_sock, msg_id, payload_raw)
             else:
                 logging.warning(f"action: receive_message | result: ignored | reason: unknown_type | type: {msg_type}")
@@ -176,10 +187,10 @@ class Server:
     def __send_ack(self, client_sock, msg_id, result_payload):
         addr = client_sock.getpeername()
         ack_payload = result_payload.encode('utf-8')
-        ack_total_len = 2 + 16 + len(ack_payload)
+        ack_total_len = HEADER_TOTAL_SIZE + len(ack_payload)
         ack_msg = (
-            ack_total_len.to_bytes(4, byteorder='big') +
-            (2).to_bytes(2, byteorder='big') +
+            ack_total_len.to_bytes(HEADER_TOTAL_LEN_SIZE, byteorder='big') +
+            MSG_TYPE_ACK.to_bytes(HEADER_TYPE_SIZE, byteorder='big') +
             msg_id +
             ack_payload
         )
@@ -204,10 +215,10 @@ class Server:
             result_payload = "{result:failure}"
 
         payload = result_payload.encode("utf-8")
-        total_len = 2 + 16 + len(payload)
+        total_len = HEADER_TOTAL_SIZE + len(payload)
         msg = (
-            total_len.to_bytes(4, "big")
-            + (6).to_bytes(2, "big")
+            total_len.to_bytes(HEADER_TOTAL_LEN_SIZE, "big")
+            + MSG_TYPE_WINNERS_RESPONSE.to_bytes(HEADER_TYPE_SIZE, "big")
             + msg_id
             + payload
         )
