@@ -2,6 +2,7 @@ import socket
 import logging
 import signal
 from common.utils import Bet, store_bets, load_bets, has_won
+
 class Server:
     def __init__(self, port, listen_backlog):
         # Initialize server socket
@@ -9,10 +10,10 @@ class Server:
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._should_terminate = False
-        self._total_agencias = 3
-        self._agencias_notificadas = set()
-        self._sorteo_realizado = False
-        self._ganadores_por_agencia = {}
+        self._total_agencies = 3
+        self._notified_agencies = set()
+        self._lottery_done = False
+        self._winners_by_agency = {}
         signal.signal(signal.SIGTERM, self._handle_sigterm)
 
     def run(self):
@@ -68,11 +69,11 @@ class Server:
             payload_raw = recv_all(client_sock, payload_len)
 
             if msg_type == 1:
-                self.__handle_bet(client_sock, msg_id, payload_raw)
+                self.__handle_single_bet(client_sock, msg_id, payload_raw)
             elif msg_type == 3:
                 self.__handle_batch(client_sock, msg_id, payload_raw)
             elif msg_type == 4:
-                self.__handle_finished(client_sock, msg_id, payload_raw)
+                self.__handle_finished_notification(client_sock, msg_id, payload_raw)
             elif msg_type == 5:
                 self.__handle_query_winners(client_sock, msg_id, payload_raw)
             else:
@@ -83,7 +84,7 @@ class Server:
             logging.error(f"action: handle_client | result: fail | error: {e}")
             client_sock.close()
 
-    def __handle_bet(self, client_sock, msg_id, payload_raw):
+    def __handle_single_bet(self, client_sock, msg_id, payload_raw):
         try:
             payload_str = payload_raw.decode('utf-8')
             addr = client_sock.getpeername()
@@ -108,27 +109,16 @@ class Server:
             logging.error(f"action: apuesta_almacenada | result: fail | error: {e}")
             result_payload = "{result:failure}"
 
-        ack_payload = result_payload.encode('utf-8')
-        ack_total_len = 2 + 16 + len(ack_payload)
-        ack_msg = (
-            ack_total_len.to_bytes(4, byteorder='big') +
-            (2).to_bytes(2, byteorder='big') +  # tipo ACK
-            msg_id +
-            ack_payload
-        )
-        client_sock.sendall(ack_msg)
-        logging.info(f"action: send_ack | result: success | ip: {addr[0]} | id: {msg_id.hex()} | msg: {result_payload}")
-        client_sock.close()
+        self.__send_ack(client_sock, msg_id, result_payload)
 
     def __handle_batch(self, client_sock, msg_id, payload_raw):
         try:
             payload_str = payload_raw.decode('utf-8')
             addr = client_sock.getpeername()
-            # logging.info(f"action: receive_message | result: success | ip: {addr[0]} | msg: {payload_str}")
 
-            apuestas_raw = payload_str.split('|')
-            apuestas = []
-            for payload in apuestas_raw:
+            raw_bets = payload_str.split('|')
+            bets = []
+            for payload in raw_bets:
                 data = parse_payload_string(payload)
                 bet = Bet(
                     agency=data["agency"],
@@ -138,39 +128,28 @@ class Server:
                     birthdate=data["nacimiento"],
                     number=data["numero"]
                 )
-                apuestas.append(bet)
+                bets.append(bet)
 
-            store_bets(apuestas)
-
+            store_bets(bets)
             result_payload = "{result:success}"
-            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(apuestas)}")
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(bets)}")
 
         except Exception as e:
-            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(apuestas_raw)}")
+            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(raw_bets)}")
             result_payload = "{result:failure}"
 
-        ack_payload = result_payload.encode('utf-8')
-        ack_total_len = 2 + 16 + len(ack_payload)
-        ack_msg = (
-            ack_total_len.to_bytes(4, byteorder='big') +
-            (2).to_bytes(2, byteorder='big') +
-            msg_id +
-            ack_payload
-        )
-        client_sock.sendall(ack_msg)
-        logging.info(f"action: send_ack | result: success | ip: {addr[0]} | id: {msg_id.hex()} | msg: {result_payload}")
-        client_sock.close()
+        self.__send_ack(client_sock, msg_id, result_payload)
 
-    def __handle_finished(self, client_sock, msg_id, payload_raw):
+    def __handle_finished_notification(self, client_sock, msg_id, payload_raw):
         try:
             payload_str = payload_raw.decode('utf-8')
             data = parse_payload_string(payload_str)
             agency = int(data["agency"])
 
-            self._agencias_notificadas.add(agency)
+            self._notified_agencies.add(agency)
 
-            if not self._sorteo_realizado and len(self._agencias_notificadas) == self._total_agencias:
-                self._realizar_sorteo()
+            if not self._lottery_done and len(self._notified_agencies) == self._total_agencies:
+                self._run_lottery()
 
             result_payload = "{result:success}"
 
@@ -180,38 +159,19 @@ class Server:
 
         self.__send_ack(client_sock, msg_id, result_payload)
 
-
-
-    def _realizar_sorteo(self):
+    def _run_lottery(self):
         try:
             logging.info("action: sorteo | result: in_progress")
-            self._ganadores_por_agencia = {}
+            self._winners_by_agency = {}
 
             for bet in load_bets():
                 if has_won(bet):
-                    self._ganadores_por_agencia.setdefault(bet.agency, []).append(bet.document)
+                    self._winners_by_agency.setdefault(bet.agency, []).append(bet.document)
 
-            self._sorteo_realizado = True
+            self._lottery_done = True
             logging.info("action: sorteo | result: success")
         except Exception as e:
             logging.error(f"action: sorteo | result: fail | error: {e}")
-
-    def _responder_a_todos_los_esperando(self):
-        for agency, sock, msg_id in self._clientes_esperando_resultado:
-            ganadores = self._ganadores_por_agencia.get(agency, [])
-            resultado = "{ganadores:" + "|".join(ganadores) + "}"
-            payload = resultado.encode("utf-8")
-            total_len = 2 + 16 + len(payload)
-            msg = (
-                total_len.to_bytes(4, "big")
-                + (6).to_bytes(2, "big")
-                + msg_id
-                + payload
-            )
-            sock.sendall(msg)
-
-            sock.close()
-        self._clientes_esperando_resultado.clear()
 
     def __send_ack(self, client_sock, msg_id, result_payload):
         addr = client_sock.getpeername()
@@ -233,17 +193,17 @@ class Server:
             data = parse_payload_string(payload_str)
             agency = int(data["agency"])
 
-            if not self._sorteo_realizado:
-                resultado = "{result:in_progress}"
+            if not self._lottery_done:
+                result_payload = "{result:in_progress}"
             else:
-                ganadores = self._ganadores_por_agencia.get(agency, [])
-                resultado = "{ganadores:" + "|".join(ganadores) + "}"
+                winners = self._winners_by_agency.get(agency, [])
+                result_payload = "{ganadores:" + "|".join(winners) + "}"
 
         except Exception as e:
             logging.error(f"action: consulta_ganadores | result: fail | error: {e}")
-            resultado = "{result:failure}"
+            result_payload = "{result:failure}"
 
-        payload = resultado.encode("utf-8")
+        payload = result_payload.encode("utf-8")
         total_len = 2 + 16 + len(payload)
         msg = (
             total_len.to_bytes(4, "big")
@@ -253,8 +213,6 @@ class Server:
         )
         client_sock.sendall(msg)
         client_sock.close()
-
-
 
 
 def recv_all(sock, n):
