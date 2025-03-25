@@ -95,6 +95,101 @@ func writeExactly(conn net.Conn, data []byte) error {
 	return nil
 }
 
+// readBatch reads up to `max` bets from CSV
+func readBatch(reader *csv.Reader, max int) ([]Bet, error) {
+	var bets []Bet
+	for len(bets) < max {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break // salgo del for, puede haber batch incompleto
+		}
+		if err != nil || len(record) < 5 {
+			log.Warningf("action: read_csv | result: skip | reason: parse_error | line: %v | error: %v", record, err)
+			continue
+		}
+		bets = append(bets, Bet{
+			Nombre:     record[0],
+			Apellido:   record[1],
+			DNI:        record[2],
+			Nacimiento: record[3],
+			Numero:     record[4],
+		})
+	}
+	return bets, nil
+}
+
+// sendBatch serializes and sends the batch to the server
+func (c *Client) sendBatch(bets []Bet) ([]byte, string, error) {
+	if err := c.createClientSocket(); err != nil {
+		return nil, "", err
+	}
+
+	var payloadParts []string
+	for _, bet := range bets {
+		payloadParts = append(payloadParts, bet.Serialize(c.config.ID))
+	}
+	payload := strings.Join(payloadParts, "|")
+
+	msgIDBytes, msgIDHex := generateMessageID(payload)
+	body := []byte(payload)
+	msgLen := uint32(len(body) + 2 + 16)
+
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.BigEndian, msgLen)
+	binary.Write(buf, binary.BigEndian, uint16(MessageTypeBatch))
+	buf.Write(msgIDBytes)
+	buf.Write(body)
+
+	if err := writeExactly(c.conn, buf.Bytes()); err != nil {
+		c.conn.Close()
+		return nil, "", err
+	}
+
+	log.Infof("action: batch_enviado | result: in_progress | id: %s | cantidad: %d", msgIDHex, len(bets))
+	return msgIDBytes, msgIDHex, nil
+}
+
+// receiveACK waits for the ACK and validates it
+func (c *Client) receiveACK(expectedID []byte, expectedHex string) (string, error) {
+	reader := bufio.NewReader(c.conn)
+
+	lenBytes, err := readExactly(reader, 4)
+	if err != nil {
+		return "", err
+	}
+	totalLen := binary.BigEndian.Uint32(lenBytes)
+
+	typeBytes, err := readExactly(reader, 2)
+	if err != nil {
+		return "", err
+	}
+	msgType := binary.BigEndian.Uint16(typeBytes)
+	if msgType != MessageTypeACK {
+		log.Errorf("action: receive_ack | result: fail | error: unexpected_type | expected: %d got: %d", MessageTypeACK, msgType)
+		return "", err
+	}
+
+	ackID, err := readExactly(reader, 16)
+	if err != nil {
+		return "", err
+	}
+	if !bytes.Equal(ackID, expectedID) {
+		log.Errorf("action: receive_ack | result: fail | error: mismatched_id | expected: %s, got: %s",
+			expectedHex, hex.EncodeToString(ackID))
+		return "", err
+	}
+
+	payloadLen := int(totalLen) - 2 - 16
+	payload, err := readExactly(reader, payloadLen)
+	if err != nil {
+		return "", err
+	}
+
+	ackStr := string(payload)
+	log.Infof("action: receive_ack | result: success | id: %s | payload: %s", hex.EncodeToString(ackID), ackStr)
+	return ackStr, nil
+}
+
 func (c *Client) StartClientLoop(ctx context.Context) {
 	file, err := os.Open("/data/agency.csv")
 	if err != nil {
@@ -103,121 +198,45 @@ func (c *Client) StartClientLoop(ctx context.Context) {
 	}
 	defer file.Close()
 
-	csvReader := csv.NewReader(file)
+	reader := csv.NewReader(file)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Infof(`action: exit | result: success | container: client_id: %v | reason: signal | signal: SIGTERM`, c.config.ID)
+			log.Infof("action: exit | result: success | client_id: %v | reason: signal", c.config.ID)
 			return
 		default:
-			var bets []Bet
-			for len(bets) < c.config.BatchBets {
-				record, err := csvReader.Read()
-				if err == io.EOF {
-					break // salgo del for, puede haber batch incompleto
-				}
-				if err != nil || len(record) < 5 {
-					log.Warningf("action: read_csv | result: skip | reason: parse_error | line: %v | error: %v", record, err)
-					continue
-				}
-				bets = append(bets, Bet{
-					Nombre:     record[0],
-					Apellido:   record[1],
-					DNI:        record[2],
-					Nacimiento: record[3],
-					Numero:     record[4],
-				})
+			bets, err := readBatch(reader, c.config.BatchBets)
+			if err != nil {
+				log.Errorf("action: read_batch | result: fail | error: %v", err)
+				return
 			}
 
 			if len(bets) == 0 {
 				return // no hay más apuestas que enviar
 			}
 
-			if err := c.createClientSocket(); err != nil {
-				log.Errorf("action: create_socket | result: fail | error: %v", err)
-				return
-			}
-
-			var payloadParts []string
-			for _, bet := range bets {
-				payloadParts = append(payloadParts, bet.Serialize(c.config.ID))
-			}
-			payload := strings.Join(payloadParts, "|")
-
-			msgIDBytes, msgIDHex := generateMessageID(payload)
-			body := []byte(payload)
-			msgLen := uint32(len(body) + 2 + 16)
-
-			buf := new(bytes.Buffer)
-			binary.Write(buf, binary.BigEndian, msgLen)
-			binary.Write(buf, binary.BigEndian, uint16(MessageTypeBatch))
-			buf.Write(msgIDBytes)
-			buf.Write(body)
-
-			err = writeExactly(c.conn, buf.Bytes())
+			msgID, msgIDHex, err := c.sendBatch(bets)
 			if err != nil {
 				log.Errorf("action: send_batch | result: fail | error: %v", err)
-				c.conn.Close()
-				return
-			}
-			log.Infof("action: batch_enviado | result: in_progress | id: %s | cantidad: %d", msgIDHex, len(bets))
-
-			reader := bufio.NewReader(c.conn)
-
-			lenBytes, err := readExactly(reader, 4)
-			if err != nil {
-				log.Errorf("action: receive_ack | result: fail | error: %v", err)
-				c.conn.Close()
-				return
-			}
-			totalLen := binary.BigEndian.Uint32(lenBytes)
-
-			typeBytes, err := readExactly(reader, 2)
-			if err != nil {
-				log.Errorf("action: receive_ack | result: fail | error: %v", err)
-				c.conn.Close()
-				return
-			}
-			msgType := binary.BigEndian.Uint16(typeBytes)
-			if msgType != MessageTypeACK {
-				log.Errorf("action: receive_ack | result: fail | error: unexpected_type | expected: %d got: %d", MessageTypeACK, msgType)
-				c.conn.Close()
 				return
 			}
 
-			ackID, err := readExactly(reader, 16)
-			if err != nil {
-				log.Errorf("action: receive_ack | result: fail | error: %v", err)
-				c.conn.Close()
-				return
-			}
-
-			if !bytes.Equal(ackID, msgIDBytes) {
-				log.Errorf("action: receive_ack | result: fail | error: mismatched_id | expected: %s", msgIDHex)
-				c.conn.Close()
-				return
-			}
-
-			payloadLen := int(totalLen) - 2 - 16
-			ackPayload, err := readExactly(reader, payloadLen)
+			ack, err := c.receiveACK(msgID, msgIDHex)
 			c.conn.Close()
 			if err != nil {
 				log.Errorf("action: receive_ack | result: fail | error: %v", err)
 				return
 			}
 
-			ackStr := string(ackPayload)
-			log.Infof("action: receive_ack | result: success | id: %s | payload: %s", hex.EncodeToString(ackID), ackStr)
-
-			switch ackStr {
+			switch ack {
 			case "{result:success}":
-				log.Infof("action: batch_enviado | result: success | id: %s | cantidad: %d", hex.EncodeToString(ackID), len(bets))
+				log.Infof("action: batch_enviado | result: success | id: %s | cantidad: %d", msgIDHex, len(bets))
 			case "{result:failure}":
-				log.Errorf("action: batch_enviado | result: fail | id: %s | cantidad: %d", hex.EncodeToString(ackID), len(bets))
+				log.Errorf("action: batch_enviado | result: fail | id: %s | cantidad: %d", msgIDHex, len(bets))
 				return
 			default:
-				log.Errorf("action: receive_ack | result: fail | reason: unexpected_payload | content: %s", ackStr)
+				log.Errorf("action: receive_ack | result: fail | reason: unexpected_payload | content: %s", ack)
 				return
 			}
 
