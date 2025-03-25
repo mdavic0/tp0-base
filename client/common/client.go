@@ -131,7 +131,7 @@ func (c *Client) StartClientLoop(ctx context.Context) {
 			}
 
 			if len(bets) == 0 {
-				break // no hay más apuestas que enviar
+				return // no hay más apuestas que enviar
 			}
 
 			if err := c.createClientSocket(); err != nil {
