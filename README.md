@@ -381,3 +381,97 @@ El protocolo implementado define un formato mixto (binario + texto plano), pensa
   - Nuevos tipos de mensajes
   - ACKs individuales o agrupados
   - Metadata adicional sin romper compatibilidad (ej: cuando me di cuenta que necesitaba enviar el agency, simplemente agregué ese campo al payload de la apuesta sin tener que hacer modificaciones mayores...)
+
+
+### Ej6
+
+Para mejorar la eficiencia en la transmisión y procesamiento de múltiples apuestas, se implementó el envío de **batches** desde el cliente al servidor. Esta estrategia permite reducir la cantidad de conexiones y ACKs necesarios al agrupar varias apuestas en un solo mensaje TCP.
+
+### Protocolo de comunicación extendido
+
+Se incorporó un nuevo tipo de mensaje al protocolo:
+
+- **Tipo `3`** → Batch de apuestas: agrupa varias apuestas separadas por `"|"` en un único mensaje.
+
+#### Ejemplo de payload
+
+```
+{agency:1,nombre:Santiago,apellido:Lorca,dni:30904465,nacimiento:1999-03-17,numero:2201}|{agency:1,nombre:Agustin,apellido:Zambrano,dni:21689196,nacimiento:2000-05-10,numero:9325}|...
+```
+
+El resto del formato del mensaje se mantiene:
+
+```
+[4 bytes] longitud total (sin incluir este campo)
+[2 bytes] tipo (3)
+[16 bytes] ID del mensaje (MD5 del payload)
+[N bytes] payload (apuestas concatenadas)
+```
+
+### Batch configurable y límite de tamaño
+
+1. Se creó un script que recorre los archivos `.csv` de apuestas por agencia, y mide el tamaño promedio del payload serializado de una apuesta utilizando el método `Bet.Serialize(...)`:
+
+    ![alt text](images/image.png)
+
+2. Resultados obtenidos:
+
+   | Cliente | Cantidad de apuestas | Tamaño promedio |
+   |---------|----------------------|------------------|
+   | client1 | 26936                | 93 bytes         |
+   | client2 | 25518                | 93 bytes         |
+   | client3 | 16014                | 93 bytes         |
+   | client4 |  9238                | 93 bytes         |
+   | client5 |   991                | 93 bytes         |
+
+   ➤ **Tamaño promedio por apuesta (serializada): 93 bytes**
+
+3. Además, por cada apuesta agregada en un batch, se suma 1 byte adicional debido al separador `"|"`.
+
+   > Total por apuesta ≈ **94 bytes**
+
+4. El protocolo define un overhead fijo de **18 bytes** en el header (2 de tipo + 16 de ID).  
+   Entonces, el payload no debe superar:
+
+   ```
+   8192 (máximo mensaje) - 18 (header) = 8174 bytes
+   ```
+
+5. Estimación:
+
+   ```
+   n * 94 - 1 <= 8174
+   n <= (8175 / 94) ≈ 86.96
+   ```
+
+   ✔ Resultado seguro: **`batch.maxAmount = 86`**
+
+### Cambios en el cliente (Go)
+
+- Se eliminó la lógica de apuestas individuales.
+- Se agregó lectura incremental del archivo `/data/agency.csv` con `encoding/csv`.
+- Se arman batches de hasta `batch.maxAmount` apuestas.
+- Se envía un mensaje tipo `3`, se espera un único ACK, y se registran logs detallados.
+
+### Cambios en el servidor (Python)
+
+- Se agregó el manejo de mensajes tipo `3`.
+- Se parsea el payload separando apuestas por `"|"`, utilizando la misma lógica de `parse_payload_string`.
+- Si todas las apuestas del batch son válidas, se persisten con `store_bets(...)` y se responde un ACK con payload `{result:success}`.
+- Si alguna apuesta es inválida (falla parseo, etc.), se responde `{result:failure}` y no se guarda nada.
+
+### Logging agregado
+
+#### Cliente:
+```
+action: batch_enviado | result: in_progress | id: ...
+action: batch_enviado | result: success | id: ... | cantidad: N
+action: receive_ack | result: success | id: ... | payload: {result:success}
+```
+
+#### Servidor:
+```
+action: receive_message | result: success | msg: ...
+action: apuesta_recibida | result: success | cantidad: N
+action: send_ack | result: success | id: ... | msg: {result:success}
+```
