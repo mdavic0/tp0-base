@@ -40,12 +40,7 @@ func InitConfig() (*viper.Viper, error) {
 	v.BindEnv("loop", "period")
 	v.BindEnv("loop", "amount")
 	v.BindEnv("log", "level")
-
-	v.BindEnv("apuesta.nombre")
-	v.BindEnv("apuesta.apellido")
-	v.BindEnv("apuesta.documento")
-	v.BindEnv("apuesta.nacimiento")
-	v.BindEnv("apuesta.numero")
+	v.BindEnv("batch", "maxAmount")
 
 	// Try to read configuration from config file. If config file
 	// does not exists then ReadInConfig will fail but configuration
@@ -112,20 +107,12 @@ func main() {
 	// Print program config with debugging purposes
 	PrintConfig(v)
 
-	bet := common.Bet{
-		Nombre:     v.GetString("apuesta.nombre"),
-		Apellido:   v.GetString("apuesta.apellido"),
-		DNI:        v.GetString("apuesta.documento"),
-		Nacimiento: v.GetString("apuesta.nacimiento"),
-		Numero:     v.GetString("apuesta.numero"),
-	}
-
 	clientConfig := common.ClientConfig{
 		ServerAddress: v.GetString("server.address"),
 		ID:            v.GetString("id"),
 		LoopAmount:    v.GetInt("loop.amount"),
 		LoopPeriod:    v.GetDuration("loop.period"),
-		Bet:           bet,
+		BatchBets:     v.GetInt("batch.maxAmount"),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -140,4 +127,5 @@ func main() {
 
 	client := common.NewClient(clientConfig)
 	client.StartClientLoop(ctx)
+	log.Infof("action: loop_finished | result: success | client_id: %v", clientConfig.ID)
 }

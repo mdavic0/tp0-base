@@ -33,13 +33,9 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID={i}
-      - CLI_APUESTA_NOMBRE={nombre}
-      - CLI_APUESTA_APELLIDO={apellido}
-      - CLI_APUESTA_DOCUMENTO={documento}
-      - CLI_APUESTA_NACIMIENTO={nacimiento}
-      - CLI_APUESTA_NUMERO={numero}
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data/agency-{i}.csv:/data/agency.csv
     networks:
       - testing_net
     depends_on:

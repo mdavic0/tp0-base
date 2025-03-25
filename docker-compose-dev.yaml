@@ -17,13 +17,65 @@ services:
     entrypoint: /client
     environment:
       - CLI_ID=1
-      - CLI_APUESTA_NOMBRE=Santiago
-      - CLI_APUESTA_APELLIDO=Lorca
-      - CLI_APUESTA_DOCUMENTO=30904465
-      - CLI_APUESTA_NACIMIENTO=1999-03-17
-      - CLI_APUESTA_NUMERO=7574
     volumes:
       - ./client/config.yaml:/config.yaml
+      - ./.data/agency-1.csv:/data/agency.csv
+    networks:
+      - testing_net
+    depends_on:
+      - server
+
+  client2:
+    container_name: client2
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=2
+    volumes:
+      - ./client/config.yaml:/config.yaml
+      - ./.data/agency-2.csv:/data/agency.csv
+    networks:
+      - testing_net
+    depends_on:
+      - server
+
+  client3:
+    container_name: client3
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=3
+    volumes:
+      - ./client/config.yaml:/config.yaml
+      - ./.data/agency-3.csv:/data/agency.csv
+    networks:
+      - testing_net
+    depends_on:
+      - server
+
+  client4:
+    container_name: client4
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=4
+    volumes:
+      - ./client/config.yaml:/config.yaml
+      - ./.data/agency-4.csv:/data/agency.csv
+    networks:
+      - testing_net
+    depends_on:
+      - server
+
+  client5:
+    container_name: client5
+    image: client:latest
+    entrypoint: /client
+    environment:
+      - CLI_ID=5
+    volumes:
+      - ./client/config.yaml:/config.yaml
+      - ./.data/agency-5.csv:/data/agency.csv
     networks:
       - testing_net
     depends_on:

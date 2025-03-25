@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/csv"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"net"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/op/go-logging"
@@ -19,8 +21,9 @@ var log = logging.MustGetLogger("log")
 
 // MessageTypes
 const (
-	MessageTypeApuesta = 1
-	MessageTypeACK     = 2
+	MessageTypeBet   = 1
+	MessageTypeACK   = 2
+	MessageTypeBatch = 3
 )
 
 // ClientConfig Configuration used by the client
@@ -29,7 +32,7 @@ type ClientConfig struct {
 	ServerAddress string
 	LoopAmount    int
 	LoopPeriod    time.Duration
-	Bet           Bet
+	BatchBets     int
 }
 
 // Client Entity that encapsulates how
@@ -92,57 +95,76 @@ func writeExactly(conn net.Conn, data []byte) error {
 	return nil
 }
 
-// StartClientLoop Send messages to the client until some time threshold is met
 func (c *Client) StartClientLoop(ctx context.Context) {
-	// There is an autoincremental msgID to identify every message sent
-	// Messages if the message amount threshold has not been surpassed
-	for msgID := 1; msgID <= c.config.LoopAmount; msgID++ {
+	file, err := os.Open("/data/agency.csv")
+	if err != nil {
+		log.Errorf("action: open_csv | result: fail | error: %v", err)
+		return
+	}
+	defer file.Close()
+
+	csvReader := csv.NewReader(file)
+
+	for {
 		select {
 		case <-ctx.Done():
-			log.Infof(`action: exit | result: success | container: client_id: %v| reason: signal | signal: SIGTERM`, c.config.ID)
+			log.Infof(`action: exit | result: success | container: client_id: %v | reason: signal | signal: SIGTERM`, c.config.ID)
 			return
 		default:
+			var bets []Bet
+			for len(bets) < c.config.BatchBets {
+				record, err := csvReader.Read()
+				if err == io.EOF {
+					break // salgo del for, puede haber batch incompleto
+				}
+				if err != nil || len(record) < 5 {
+					log.Warningf("action: read_csv | result: skip | reason: parse_error | line: %v | error: %v", record, err)
+					continue
+				}
+				bets = append(bets, Bet{
+					Nombre:     record[0],
+					Apellido:   record[1],
+					DNI:        record[2],
+					Nacimiento: record[3],
+					Numero:     record[4],
+				})
+			}
+
+			if len(bets) == 0 {
+				break // no hay más apuestas que enviar
+			}
+
 			if err := c.createClientSocket(); err != nil {
 				log.Errorf("action: create_socket | result: fail | error: %v", err)
 				return
 			}
 
-			// Armar payload estilo JSON plano
-			payload := fmt.Sprintf(
-				"{agency:%s,nombre:%s,apellido:%s,dni:%s,nacimiento:%s,numero:%s}",
-				c.config.ID,
-				c.config.Bet.Nombre,
-				c.config.Bet.Apellido,
-				c.config.Bet.DNI,
-				c.config.Bet.Nacimiento,
-				c.config.Bet.Numero,
-			)
+			var payloadParts []string
+			for _, bet := range bets {
+				payloadParts = append(payloadParts, bet.Serialize(c.config.ID))
+			}
+			payload := strings.Join(payloadParts, "|")
 
-			// Generar ID
 			msgIDBytes, msgIDHex := generateMessageID(payload)
 			body := []byte(payload)
 			msgLen := uint32(len(body) + 2 + 16)
 
-			// Armar mensaje
 			buf := new(bytes.Buffer)
 			binary.Write(buf, binary.BigEndian, msgLen)
-			binary.Write(buf, binary.BigEndian, uint16(MessageTypeApuesta))
+			binary.Write(buf, binary.BigEndian, uint16(MessageTypeBatch))
 			buf.Write(msgIDBytes)
 			buf.Write(body)
 
-			// Enviar mensaje
-			err := writeExactly(c.conn, buf.Bytes())
+			err = writeExactly(c.conn, buf.Bytes())
 			if err != nil {
-				log.Errorf("action: send_message | result: fail | error: %v", err)
+				log.Errorf("action: send_batch | result: fail | error: %v", err)
 				c.conn.Close()
 				return
 			}
-			log.Infof("action: apuesta_enviada | result: in_progress | id: %s | dni: %s | numero: %s", msgIDHex, c.config.Bet.DNI, c.config.Bet.Numero)
+			log.Infof("action: batch_enviado | result: in_progress | id: %s | cantidad: %d", msgIDHex, len(bets))
 
-			// Leer ACK
 			reader := bufio.NewReader(c.conn)
 
-			// Leer header del ACK
 			lenBytes, err := readExactly(reader, 4)
 			if err != nil {
 				log.Errorf("action: receive_ack | result: fail | error: %v", err)
@@ -180,7 +202,6 @@ func (c *Client) StartClientLoop(ctx context.Context) {
 			payloadLen := int(totalLen) - 2 - 16
 			ackPayload, err := readExactly(reader, payloadLen)
 			c.conn.Close()
-
 			if err != nil {
 				log.Errorf("action: receive_ack | result: fail | error: %v", err)
 				return
@@ -191,9 +212,9 @@ func (c *Client) StartClientLoop(ctx context.Context) {
 
 			switch ackStr {
 			case "{result:success}":
-				log.Infof("action: apuesta_enviada | result: success | id: %s | dni: %s | numero: %s", hex.EncodeToString(ackID), c.config.Bet.DNI, c.config.Bet.Numero)
+				log.Infof("action: batch_enviado | result: success | id: %s | cantidad: %d", hex.EncodeToString(ackID), len(bets))
 			case "{result:failure}":
-				log.Errorf("action: apuesta_enviada | result: fail | reason: server_response | dni: %s | numero: %s", c.config.Bet.DNI, c.config.Bet.Numero)
+				log.Errorf("action: batch_enviado | result: fail | id: %s | cantidad: %d", hex.EncodeToString(ackID), len(bets))
 				return
 			default:
 				log.Errorf("action: receive_ack | result: fail | reason: unexpected_payload | content: %s", ackStr)
@@ -203,5 +224,4 @@ func (c *Client) StartClientLoop(ctx context.Context) {
 			time.Sleep(c.config.LoopPeriod)
 		}
 	}
-	log.Infof("action: loop_finished | result: success | client_id: %v", c.config.ID)
 }

@@ -65,6 +65,8 @@ class Server:
 
             if msg_type == 1:
                 self.__handle_bet(client_sock, msg_id, payload_raw)
+            elif msg_type == 3:
+                self.__handle_batch(client_sock, msg_id, payload_raw)
             else:
                 logging.warning(f"action: receive_message | result: ignored | reason: unknown_type | type: {msg_type}")
                 client_sock.close()
@@ -109,6 +111,48 @@ class Server:
         client_sock.sendall(ack_msg)
         logging.info(f"action: send_ack | result: success | ip: {addr[0]} | id: {msg_id.hex()} | msg: {result_payload}")
         client_sock.close()
+
+    def __handle_batch(self, client_sock, msg_id, payload_raw):
+        try:
+            payload_str = payload_raw.decode('utf-8')
+            addr = client_sock.getpeername()
+            # logging.info(f"action: receive_message | result: success | ip: {addr[0]} | msg: {payload_str}")
+
+            apuestas_raw = payload_str.split('|')
+            apuestas = []
+            for payload in apuestas_raw:
+                data = parse_payload_string(payload)
+                bet = Bet(
+                    agency=data["agency"],
+                    first_name=data["nombre"],
+                    last_name=data["apellido"],
+                    document=data["dni"],
+                    birthdate=data["nacimiento"],
+                    number=data["numero"]
+                )
+                apuestas.append(bet)
+
+            store_bets(apuestas)
+
+            result_payload = "{result:success}"
+            logging.info(f"action: apuesta_recibida | result: success | cantidad: {len(apuestas)}")
+
+        except Exception as e:
+            logging.error(f"action: apuesta_recibida | result: fail | cantidad: {len(apuestas_raw)}")
+            result_payload = "{result:failure}"
+
+        ack_payload = result_payload.encode('utf-8')
+        ack_total_len = 2 + 16 + len(ack_payload)
+        ack_msg = (
+            ack_total_len.to_bytes(4, byteorder='big') +
+            (2).to_bytes(2, byteorder='big') +
+            msg_id +
+            ack_payload
+        )
+        client_sock.sendall(ack_msg)
+        logging.info(f"action: send_ack | result: success | ip: {addr[0]} | id: {msg_id.hex()} | msg: {result_payload}")
+        client_sock.close()
+
 
 
 def recv_all(sock, n):
