@@ -21,9 +21,12 @@ var log = logging.MustGetLogger("log")
 
 // MessageTypes
 const (
-	MessageTypeBet   = 1
-	MessageTypeACK   = 2
-	MessageTypeBatch = 3
+	MessageTypeBet             = 1
+	MessageTypeACK             = 2
+	MessageTypeBatch           = 3
+	MessageTypeFinished        = 4
+	MessageTypeAskForWinners   = 5
+	MessageTypeWinnersResponse = 6
 )
 
 // ClientConfig Configuration used by the client
@@ -190,6 +193,130 @@ func (c *Client) receiveACK(expectedID []byte, expectedHex string) (string, erro
 	return ackStr, nil
 }
 
+func (c *Client) sendFinishedNotification() error {
+	payload := "{agency:" + c.config.ID + "}"
+	msgIDBytes, msgIDHex := generateMessageID(payload)
+	body := []byte(payload)
+	msgLen := uint32(len(body) + 2 + 16)
+
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.BigEndian, msgLen)
+	binary.Write(buf, binary.BigEndian, uint16(MessageTypeFinished))
+	buf.Write(msgIDBytes)
+	buf.Write(body)
+
+	if err := c.createClientSocket(); err != nil {
+		return err
+	}
+
+	err := writeExactly(c.conn, buf.Bytes())
+	if err != nil {
+		log.Errorf("action: notify_finished | result: fail | error: %v", err)
+		c.conn.Close()
+		return err
+	}
+	log.Infof("action: notify_finished | result: success | id: %s", msgIDHex)
+
+	_, err = c.receiveACK(msgIDBytes, msgIDHex)
+	c.conn.Close()
+	return err
+}
+
+func (c *Client) tryAskForWinners() error {
+	payload := "{agency:" + c.config.ID + "}"
+	msgIDBytes, msgIDHex := generateMessageID(payload)
+	body := []byte(payload)
+	msgLen := uint32(len(body) + 2 + 16)
+
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.BigEndian, msgLen)
+	binary.Write(buf, binary.BigEndian, uint16(MessageTypeAskForWinners))
+	buf.Write(msgIDBytes)
+	buf.Write(body)
+
+	if err := c.createClientSocket(); err != nil {
+		return err
+	}
+
+	err := writeExactly(c.conn, buf.Bytes())
+	if err != nil {
+		log.Errorf("action: consulta_ganadores | result: fail | error: %v", err)
+		c.conn.Close()
+		return err
+	}
+
+	reader := bufio.NewReader(c.conn)
+
+	lenBytes, err := readExactly(reader, 4)
+	if err != nil {
+		return err
+	}
+	totalLen := binary.BigEndian.Uint32(lenBytes)
+
+	typeBytes, err := readExactly(reader, 2)
+	if err != nil {
+		return err
+	}
+	msgType := binary.BigEndian.Uint16(typeBytes)
+	if msgType != MessageTypeWinnersResponse {
+		log.Errorf("action: consulta_ganadores | result: fail | error: unexpected_type | got: %d", msgType)
+		return err
+	}
+
+	ackID, err := readExactly(reader, 16)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(ackID, msgIDBytes) {
+		log.Errorf("action: consulta_ganadores | result: fail | error: mismatched_id | expected: %s, got: %s", msgIDHex, hex.EncodeToString(ackID))
+		return err
+	}
+
+	payloadLen := int(totalLen) - 2 - 16
+	payloadResp, err := readExactly(reader, payloadLen)
+	c.conn.Close()
+	if err != nil {
+		return err
+	}
+
+	payloadStr := string(payloadResp)
+	payloadStr = strings.Trim(payloadStr, "{}")
+	parts := strings.Split(payloadStr, ":")
+
+	// Caso sorteo pendiente
+	if parts[0] == "result" && parts[1] == "pending" {
+		return io.EOF // mando error para reintentar
+	}
+
+	// Caso correcto
+	if parts[0] != "ganadores" {
+		log.Errorf("action: consulta_ganadores | result: fail | reason: unexpected_format | content: %s", payloadStr)
+		return nil
+	}
+
+	count := 0
+	if parts[1] != "" {
+		count = len(strings.Split(parts[1], "|"))
+	}
+
+	log.Infof("action: consulta_ganadores | result: success | cant_ganadores: %d", count)
+	return nil
+}
+
+func (c *Client) askForWinners() error {
+	maxRetries := 10
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		err := c.tryAskForWinners()
+		if err == nil {
+			return nil
+		}
+		log.Infof("action: consulta_ganadores | result: pending | intento: %d/%d", attempt, maxRetries)
+		time.Sleep(c.config.LoopPeriod)
+	}
+	log.Errorf("action: consulta_ganadores | result: fail | reason: max_retries_exceeded")
+	return nil
+}
+
 func (c *Client) StartClientLoop(ctx context.Context) {
 	file, err := os.Open("/data/agency.csv")
 	if err != nil {
@@ -213,7 +340,16 @@ func (c *Client) StartClientLoop(ctx context.Context) {
 			}
 
 			if len(bets) == 0 {
-				return // no hay más apuestas que enviar
+				// no hay más apuestas que enviar
+				if err := c.sendFinishedNotification(); err != nil {
+					log.Errorf("action: notify_finished | result: fail | error: %v", err)
+					return
+				}
+
+				if err := c.askForWinners(); err != nil {
+					log.Errorf("action: consulta_ganadores | result: fail | error: %v", err)
+				}
+				return
 			}
 
 			msgID, msgIDHex, err := c.sendBatch(bets)

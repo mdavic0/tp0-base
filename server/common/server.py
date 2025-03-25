@@ -1,7 +1,7 @@
 import socket
 import logging
 import signal
-from common.utils import Bet, store_bets
+from common.utils import Bet, store_bets, load_bets, has_won
 class Server:
     def __init__(self, port, listen_backlog):
         # Initialize server socket
@@ -9,6 +9,10 @@ class Server:
         self._server_socket.bind(('', port))
         self._server_socket.listen(listen_backlog)
         self._should_terminate = False
+        self._total_agencias = 3
+        self._agencias_notificadas = set()
+        self._sorteo_realizado = False
+        self._ganadores_por_agencia = {}
         signal.signal(signal.SIGTERM, self._handle_sigterm)
 
     def run(self):
@@ -67,6 +71,10 @@ class Server:
                 self.__handle_bet(client_sock, msg_id, payload_raw)
             elif msg_type == 3:
                 self.__handle_batch(client_sock, msg_id, payload_raw)
+            elif msg_type == 4:
+                self.__handle_finished(client_sock, msg_id, payload_raw)
+            elif msg_type == 5:
+                self.__handle_query_winners(client_sock, msg_id, payload_raw)
             else:
                 logging.warning(f"action: receive_message | result: ignored | reason: unknown_type | type: {msg_type}")
                 client_sock.close()
@@ -152,6 +160,100 @@ class Server:
         client_sock.sendall(ack_msg)
         logging.info(f"action: send_ack | result: success | ip: {addr[0]} | id: {msg_id.hex()} | msg: {result_payload}")
         client_sock.close()
+
+    def __handle_finished(self, client_sock, msg_id, payload_raw):
+        try:
+            payload_str = payload_raw.decode('utf-8')
+            data = parse_payload_string(payload_str)
+            agency = int(data["agency"])
+
+            self._agencias_notificadas.add(agency)
+
+            if not self._sorteo_realizado and len(self._agencias_notificadas) == self._total_agencias:
+                self._realizar_sorteo()
+
+            result_payload = "{result:success}"
+
+        except Exception as e:
+            logging.error(f"action: notify_finished | result: fail | error: {e}")
+            result_payload = "{result:failure}"
+
+        self.__send_ack(client_sock, msg_id, result_payload)
+
+
+
+    def _realizar_sorteo(self):
+        try:
+            logging.info("action: sorteo | result: in_progress")
+            self._ganadores_por_agencia = {}
+
+            for bet in load_bets():
+                if has_won(bet):
+                    self._ganadores_por_agencia.setdefault(bet.agency, []).append(bet.document)
+
+            self._sorteo_realizado = True
+            logging.info("action: sorteo | result: success")
+        except Exception as e:
+            logging.error(f"action: sorteo | result: fail | error: {e}")
+
+    def _responder_a_todos_los_esperando(self):
+        for agency, sock, msg_id in self._clientes_esperando_resultado:
+            ganadores = self._ganadores_por_agencia.get(agency, [])
+            resultado = "{ganadores:" + "|".join(ganadores) + "}"
+            payload = resultado.encode("utf-8")
+            total_len = 2 + 16 + len(payload)
+            msg = (
+                total_len.to_bytes(4, "big")
+                + (6).to_bytes(2, "big")
+                + msg_id
+                + payload
+            )
+            sock.sendall(msg)
+
+            sock.close()
+        self._clientes_esperando_resultado.clear()
+
+    def __send_ack(self, client_sock, msg_id, result_payload):
+        addr = client_sock.getpeername()
+        ack_payload = result_payload.encode('utf-8')
+        ack_total_len = 2 + 16 + len(ack_payload)
+        ack_msg = (
+            ack_total_len.to_bytes(4, byteorder='big') +
+            (2).to_bytes(2, byteorder='big') +
+            msg_id +
+            ack_payload
+        )
+        client_sock.sendall(ack_msg)
+        logging.info(f"action: send_ack | result: success | ip: {addr[0]} | id: {msg_id.hex()} | msg: {result_payload}")
+        client_sock.close()
+
+    def __handle_query_winners(self, client_sock, msg_id, payload_raw):
+        try:
+            payload_str = payload_raw.decode('utf-8')
+            data = parse_payload_string(payload_str)
+            agency = int(data["agency"])
+
+            if not self._sorteo_realizado:
+                resultado = "{result:pending}"
+            else:
+                ganadores = self._ganadores_por_agencia.get(agency, [])
+                resultado = "{ganadores:" + "|".join(ganadores) + "}"
+
+        except Exception as e:
+            logging.error(f"action: consulta_ganadores | result: fail | error: {e}")
+            resultado = "{result:failure}"
+
+        payload = resultado.encode("utf-8")
+        total_len = 2 + 16 + len(payload)
+        msg = (
+            total_len.to_bytes(4, "big")
+            + (6).to_bytes(2, "big")
+            + msg_id
+            + payload
+        )
+        client_sock.sendall(msg)
+        client_sock.close()
+
 
 
 
