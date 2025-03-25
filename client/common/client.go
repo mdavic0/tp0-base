@@ -284,7 +284,7 @@ func (c *Client) tryAskForWinners() error {
 	parts := strings.Split(payloadStr, ":")
 
 	// Caso sorteo pendiente
-	if parts[0] == "result" && parts[1] == "pending" {
+	if parts[0] == "result" && parts[1] == "in_progress" {
 		return io.EOF // mando error para reintentar
 	}
 
@@ -310,7 +310,7 @@ func (c *Client) askForWinners() error {
 		if err == nil {
 			return nil
 		}
-		log.Infof("action: consulta_ganadores | result: pending | intento: %d/%d", attempt, maxRetries)
+		log.Infof("action: consulta_ganadores | result: in_progress | intento: %d/%d", attempt, maxRetries)
 		time.Sleep(c.config.LoopPeriod)
 	}
 	log.Errorf("action: consulta_ganadores | result: fail | reason: max_retries_exceeded")

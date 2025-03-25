@@ -234,7 +234,7 @@ class Server:
             agency = int(data["agency"])
 
             if not self._sorteo_realizado:
-                resultado = "{result:pending}"
+                resultado = "{result:in_progress}"
             else:
                 ganadores = self._ganadores_por_agencia.get(agency, [])
                 resultado = "{ganadores:" + "|".join(ganadores) + "}"
