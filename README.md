@@ -475,3 +475,87 @@ action: receive_message | result: success | msg: ...
 action: apuesta_recibida | result: success | cantidad: N
 action: send_ack | result: success | id: ... | msg: {result:success}
 ```
+
+
+### Ej7
+
+En este ejercicio se agregó soporte para realizar el sorteo una vez que **todas las agencias notificaron que finalizaron el envío de apuestas**, y permitir que cada una consulte **solo sus propios ganadores**. Se mantuvo el diseño cliente-servidor secuencial, sin introducir concurrencia, pero adaptando el protocolo y la lógica para soportar este flujo de sincronización distribuida.
+
+### Extensión del protocolo
+
+Se incorporaron tres nuevos tipos de mensaje:
+
+| Tipo | Descripción                                  |
+|------|----------------------------------------------|
+| `4`  | Notificación de finalización de envío        |
+| `5`  | Consulta de ganadores por agencia            |
+| `6`  | Respuesta del servidor con los ganadores     |
+
+#### Ejemplo de payloads
+
+- Mensaje tipo `4` (notificación):
+  ```
+  {agency:2}
+  ```
+
+- Mensaje tipo `5` (consulta de ganadores):
+  ```
+  {agency:2}
+  ```
+
+- Respuesta tipo `6` (ganadores disponibles):
+  ```
+  {ganadores:30904465|40222111}
+  ```
+
+- Respuesta tipo `6` (sorteo no realizado aún):
+  ```
+  {result:in_progress}
+  ```
+
+### Decisiones de diseño importantes
+
+- **Coordinación distribuida a través de notificaciones**:  
+  El servidor lleva un registro de las agencias que notificaron finalización (tipo 4). Una vez alcanzado el umbral (`N=3` o `N=5`), se realiza el sorteo utilizando `load_bets(...)` y `has_won(...)`.
+
+- **Polling implementado en el cliente**:  
+  Luego de notificar con un mensaje tipo 4, el cliente inicia un bucle de reintentos periódicos (hasta 10 retries, y cada un loop period configurable) enviando tipo 5 (consulta de ganadores). Si el sorteo aún no se realizó, recibe `{result:in_progress}` y espera un período antes de volver a consultar.
+
+- **Sin bloqueo del servidor**:  
+  Gracias al uso de conexiones cortas y mensajes independientes (en la fase de polling), el servidor no queda bloqueado permanentemente por una sola agencia. Durante el envío de apuestas, el servidor atiende a un cliente hasta que este termina de mandar todas las apuestas. Luego puede atender a otras conexiones (de polling o de otras agencias), manteniendo una arquitectura simple y compatible con el protocolo ya implementado.
+
+### Flujo general del sistema
+
+1. El cliente envía apuestas en batches (tipo 3).
+2. Una vez finalizado el archivo, envía un mensaje tipo 4 notificando que terminó. Hasta este punto se mantiene una única conexión.
+3. El servidor guarda la notificación y, si todas las agencias notificaron, ejecuta el sorteo.
+4. El cliente realiza polling con mensajes tipo 5 hasta que el servidor responde con tipo 6 que contiene los ganadores. Cada uno de estos mensajes se realiza mediante una nueva conexión.
+5. Cuando los ganadores están disponibles, el cliente imprime la cantidad y finaliza su ejecución.
+
+### Cambios en el servidor (Python)
+
+- Se agregó el manejo del mensaje tipo 4. Se almacena la agencia como "notificada" y se responde con un ACK (`{result:success}`).
+- Si la cantidad de agencias notificadas alcanza el umbral configurado, se ejecuta el sorteo y se almacenan los ganadores por agencia.
+- Se agregó el manejo del mensaje tipo 5. Si el sorteo aún no se realizó, se responde `{result:in_progress}`. Caso contrario, se responde con los DNIs ganadores correspondientes a la agencia solicitante.
+
+### Cambios en el cliente (Go)
+
+- Se agregó `sendFinishedNotification(...)` para enviar tipo 4 y esperar el ACK.
+- Se agregó `askForWinners(...)`, que implementa un bucle de polling con reintentos. Si el servidor responde `{result:in_progress}`, se espera y se reintenta.
+- Cuando la respuesta contiene ganadores, se registran en el log y el cliente finaliza.
+
+### Logging estructurado agregado
+
+#### Cliente:
+```
+action: notify_finished | result: success | id: ...
+action: consulta_ganadores | result: in_progress | intento: N/10
+action: consulta_ganadores | result: success | cant_ganadores: 3
+```
+
+#### Servidor:
+```
+action: notify_finished | result: success | agency: 2
+action: sorteo | result: success
+action: consulta_ganadores | result: success | agency: 2
+```
