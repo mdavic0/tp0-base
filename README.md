@@ -178,3 +178,428 @@ Se espera que se redacte una sección del README en donde se indique cómo ejecu
 Se proveen [pruebas automáticas](https://github.com/7574-sistemas-distribuidos/tp0-tests) de caja negra. Se exige que la resolución de los ejercicios pase tales pruebas, o en su defecto que las discrepancias sean justificadas y discutidas con los docentes antes del día de la entrega. El incumplimiento de las pruebas es condición de desaprobación, pero su cumplimiento no es suficiente para la aprobación. Respetar las entradas de log planteadas en los ejercicios, pues son las que se chequean en cada uno de los tests.
 
 La corrección personal tendrá en cuenta la calidad del código entregado y casos de error posibles, se manifiesten o no durante la ejecución del trabajo práctico. Se pide a los alumnos leer atentamente y **tener en cuenta** los criterios de corrección informados  [en el campus](https://campusgrado.fi.uba.ar/mod/page/view.php?id=73393).
+
+## Resolución
+A continuación se detalla la forma de ejecución y explicación de cada ejercicio en particular.
+
+### Ej1
+El primer paso es darle permisos de ejecución al script de bash que permite crear una definición de DockerCompose con una cantidad configurable de clientes:
+```bash
+chmod +x generar-compose.sh  
+```
+Este script se encuentra en la en la raíz del proyecto y recibirá por parámetro el nombre del archivo de salida y la cantidad de clientes esperados:
+```bash
+./generar-compose.sh <nombre_archivo.yaml> <num_clientes>
+```
+
+Este script invoca un subscript de python:
+```bash
+#!/bin/bash
+echo "Nombre del archivo de salida: $1"
+echo "Cantidad de clientes: $2"
+python3 docker-compose-generator.py $1 $2
+```
+
+El script de python `docker-compose-generator.py` es finalmente quien genera el .yaml deseado
+
+Para correr el script de bash y crear una definición de DockerCompose ejecutar:
+```bash
+./generar-compose.sh docker-compose-dev.yaml 5
+```
+
+
+### Ej2
+En este punto se modificó la configuración para inyectar los archivos de configuración desde fuera de los contenedores usando volúmenes de Docker. Los volúmenes permiten que un archivo en tu host sea montado dentro del contenedor, lo que facilita la modificación de archivos como los de configuración sin tener que hacer un nuevo build de las imágenes.
+
+Eliminé la linea del Dockerfile del cliente que hace la copia del config.yaml
+```Dockerfile
+# COPY ./client/config.yaml /config.yaml
+```
+Modifiqué el generador de docker-compose-dev.yaml agregando volúmenes para inyectar los archivos de configuración desde el host dentro de los contenedores.
+```yaml
+volumes:
+    - ./server/config.ini:/config.ini
+```
+```yaml
+volumes:
+    - ./client/config.yaml:/config.yaml
+```
+
+Por último eliminé la variable de entorno de `LOGGING_LEVEL` y `CLI_LOG_LEVEL` del docker compose para evitar que sobrescriban los valores de los archivos de configuración.
+
+De este modo los cambios realizados en los archivos config.yaml y config.ini en el host se reflejarán automáticamente dentro de los contenedores sin necesidad de volver a construir las imágenes. La forma de ejecución sigue siendo la misma.
+
+### Ej3
+En este punto se crea un script validar-echo-server.sh que valida el funcionamiento del EchoServer utilizando netcat desde un contenedor Docker en la misma network que el servidor.
+
+El script crea un contenedor temporal basado en busybox, que incluye algunas utilidades básicas de Unix, entre ellas sh (shell), y nc (netcat), y se usa el comando netcat (nc) para enviar el mensaje al servidor. 
+Finalmente se compara la respuesta recibida con el mensaje enviado. Si coinciden, se imprime
+```bash
+ "action: test_echo_server | result: success"
+ ```
+ de lo contrario
+ ```bash
+ "action: test_echo_server | result: fail"
+```
+
+Para ejecutar el script:
+1) Le damos permisos de ejecución aL script
+```bash
+chmod +x validar-echo-server.sh  
+```
+2) Se inicializa el ambiente de desarrollo
+```bash
+make docker-compose-up
+```
+3) Ejecutamos el script para validar el funcionamiento del echo server
+```bash
+./validar-echo-server.sh
+```
+4) Detener los containers y destruir todos los recursos asociados al proyecto que fueron inicializados.
+```bash
+make docker-compose-down
+```
+
+### Ej4
+
+En este ejercicio se implementó un manejo graceful de finalización para los contenedores de cliente y servidor. El objetivo fue que, ante una señal de `SIGTERM`, ambos servicios puedan finalizar de forma ordenada, liberar recursos y registrar un mensaje de salida sin errores.
+
+#### Servidor
+Se incorporó el manejo de la señal `SIGTERM` utilizando el módulo `signal`. Al recibir la señal, el servidor:
+- Cierra el socket de escucha
+- Interrumpe el bucle principal de aceptación de conexiones
+- Emite un log con el siguiente formato:
+```python
+logging.info("action: receive_signal | result: success | container: server | signal: SIGTERM")
+```
+- Finaliza con un mensaje:
+```python
+logging.info("action: exit | result: success | source: server")
+```
+
+Además, se evitó que el cierre del socket genere un error confuso (`Bad file descriptor`) mediante el chequeo del código de error y el estado de terminación.
+
+#### Cliente
+El cliente fue modificado para capturar `SIGTERM` usando `os/signal` y `context`. Se introdujo un `context.WithCancel()` que permite salir del bucle principal de envío de mensajes. Al recibir la señal, el cliente:
+- Emite un log estructurado:
+```go
+log.Println("action: receive_signal | result: success | container: client1 | signal: SIGTERM")
+```
+- Finaliza el loop y escribe:
+```go
+log.Println("action: exit | result: success | source: client1")
+```
+
+Por último, aumenté a 3 segundos el tiempo de espera antes de matar forzosamente un contenedor. Para esto modifiqué en el Makefile el flag -t, ya que si el tiempo de espera es muy corto, puede que el proceso no alcance a hacer el "shutdown limpio".
+
+### Ej5
+
+Considerando que en los próximos ejercicios se requerirá el envío de múltiples apuestas y otro tipo de mensajes, se diseñó desde el inicio un **protocolo de comunicación simple, binario y extensible** que permita adaptarse sin modificar la estructura fundamental del sistema.
+
+---
+
+### Protocolo de comunicación
+
+El protocolo implementado define un formato mixto (binario + texto plano), pensado para:
+- Detectar y manejar short-read/short-write
+- Identificar mensajes
+- Separar la semántica (tipo) del contenido (payload)
+- Facilitar la trazabilidad entre mensajes y sus respuestas
+
+---
+
+#### Estructura del mensaje
+
+```
+[4 bytes - longitud total]
+[2 bytes - tipo de mensaje]
+[16 bytes - ID del mensaje]
+[payload en texto plano estilo JSON]
+```
+
+---
+
+#### Detalle de cada campo
+
+- **Longitud total (4 bytes)**: entero sin signo (big-endian). Indica el largo total del mensaje **desde el campo "tipo" hasta el final del payload** (excluye estos 4 bytes).
+- **Tipo de mensaje (2 bytes)**:
+  - `1` → Apuesta individual
+  - `2` → ACK (respuesta a una apuesta)
+  - `3, 4, ...` → (reservado para chunks u otros mensajes futuros)
+- **ID del mensaje (16 bytes)**: identificador único generado por el cliente, calculado como el **hash MD5 del payload**. Se utiliza para correlacionar respuestas del servidor (ACK) con el mensaje original a modo de uuid.
+- **Payload**: texto plano con formato estilo JSON (sin comillas, sin claves anidadas). Ejemplos:
+
+  Apuesta:
+  ```
+  {agency:1,nombre:Santiago,apellido:Lorca,dni:30904465,nacimiento:1999-03-17,numero:7574}
+  ```
+
+  ACK:
+  ```
+  {result:success}
+  ```
+
+---
+
+### Short Read y Short Write
+
+#### Cliente
+
+- **Short Read**: al leer datos del socket, se utiliza la función `readExactly(...)`, que hace `Read()` en bucle hasta recibir la cantidad exacta de bytes. Esto evita que un mensaje parcial se interprete como completo.
+  
+- **Short Write**: se implementó la función `writeExactly(...)`, que garantiza que todo el mensaje se escriba completamente al socket, sin depender de que `Write()` lo haga en una sola llamada.
+
+#### Servidor
+
+- **Short Read**: se implementó `recv_all(...)`, una función equivalente que hace `recv()` en bucle hasta completar los N bytes requeridos (headers + payload).
+  
+- **Short Write**: en el servidor se utiliza `sendall()`, que internamente maneja la escritura completa de datos sobre sockets en Python. Esto garantiza que los ACKs se envíen enteros, sin cortes.
+
+---
+
+### Decisiones de implementación relevantes
+
+- **Uso de `net.Conn.Write(...)` en lugar de `fmt.Fprintf(...)`**:  
+  Aunque `fmt.Fprintf()` puede ser útil para logs o comandos tipo texto, el cliente necesita enviar **mensajes binarios estructurados** (con campos como `uint32`, `uint16`, `[]byte`...), por lo que `Write()` es más adecuado, seguro y controlado.
+
+- **Separación de responsabilidades**:
+  - `main.go` se encarga de configurar y orquestar el cliente
+  - `client.go` encapsula la lógica de comunicación
+  - `utils.go` define la estructura `Bet` y puede expandirse para manejar otros tipos de mensaje
+
+- **Logging estructurado y trazable**:
+  Se implementaron logs del tipo:
+  - `apuesta_enviada | result: in_progress`
+  - `receive_ack | result: success | payload: ...`
+  - `apuesta_enviada | result: success/fail | id: ...`
+
+  Esto permite seguir fácilmente cada mensaje a lo largo del sistema.
+
+- **Design for extension**:
+  El protocolo fue pensado desde el principio para admitir:
+  - Envío de chunks de apuestas
+  - Nuevos tipos de mensajes
+  - ACKs individuales o agrupados
+  - Metadata adicional sin romper compatibilidad (ej: cuando me di cuenta que necesitaba enviar el agency, simplemente agregué ese campo al payload de la apuesta sin tener que hacer modificaciones mayores...)
+
+
+### Ej6
+
+Para mejorar la eficiencia en la transmisión y procesamiento de múltiples apuestas, se implementó el envío de **batches** desde el cliente al servidor. Esta estrategia permite reducir la cantidad de conexiones y ACKs necesarios al agrupar varias apuestas en un solo mensaje TCP.
+
+### Protocolo de comunicación extendido
+
+Se incorporó un nuevo tipo de mensaje al protocolo:
+
+- **Tipo `3`** → Batch de apuestas: agrupa varias apuestas separadas por `"|"` en un único mensaje.
+
+#### Ejemplo de payload
+
+```
+{agency:1,nombre:Santiago,apellido:Lorca,dni:30904465,nacimiento:1999-03-17,numero:2201}|{agency:1,nombre:Agustin,apellido:Zambrano,dni:21689196,nacimiento:2000-05-10,numero:9325}|...
+```
+
+El resto del formato del mensaje se mantiene:
+
+```
+[4 bytes] longitud total (sin incluir este campo)
+[2 bytes] tipo (3)
+[16 bytes] ID del mensaje (MD5 del payload)
+[N bytes] payload (apuestas concatenadas)
+```
+
+### Batch configurable y límite de tamaño
+
+1. Se creó un script que recorre los archivos `.csv` de apuestas por agencia, y mide el tamaño promedio del payload serializado de una apuesta utilizando el método `Bet.Serialize(...)`:
+
+    ![alt text](images/image.png)
+
+2. Resultados obtenidos:
+
+   | Cliente | Cantidad de apuestas | Tamaño promedio |
+   |---------|----------------------|------------------|
+   | client1 | 26936                | 93 bytes         |
+   | client2 | 25518                | 93 bytes         |
+   | client3 | 16014                | 93 bytes         |
+   | client4 |  9238                | 93 bytes         |
+   | client5 |   991                | 93 bytes         |
+
+   ➤ **Tamaño promedio por apuesta (serializada): 93 bytes**
+
+3. Además, por cada apuesta agregada en un batch, se suma 1 byte adicional debido al separador `"|"`.
+
+   > Total por apuesta ≈ **94 bytes**
+
+4. El protocolo define un overhead fijo de **18 bytes** en el header (2 de tipo + 16 de ID).  
+   Entonces, el payload no debe superar:
+
+   ```
+   8192 (máximo mensaje) - 18 (header) = 8174 bytes
+   ```
+
+5. Estimación:
+
+   ```
+   n * 94 - 1 <= 8174
+   n <= (8175 / 94) ≈ 86.96
+   ```
+
+   ✔ Resultado seguro: **`batch.maxAmount = 86`**
+
+### Cambios en el cliente (Go)
+
+- Se eliminó la lógica de apuestas individuales.
+- Se agregó lectura incremental del archivo `/data/agency.csv` con `encoding/csv`.
+- Se arman batches de hasta `batch.maxAmount` apuestas.
+- Se envía un mensaje tipo `3`, se espera un único ACK, y se registran logs detallados.
+
+### Cambios en el servidor (Python)
+
+- Se agregó el manejo de mensajes tipo `3`.
+- Se parsea el payload separando apuestas por `"|"`, utilizando la misma lógica de `parse_payload_string`.
+- Si todas las apuestas del batch son válidas, se persisten con `store_bets(...)` y se responde un ACK con payload `{result:success}`.
+- Si alguna apuesta es inválida (falla parseo, etc.), se responde `{result:failure}` y no se guarda nada.
+
+### Logging agregado
+
+#### Cliente:
+```
+action: batch_enviado | result: in_progress | id: ...
+action: batch_enviado | result: success | id: ... | cantidad: N
+action: receive_ack | result: success | id: ... | payload: {result:success}
+```
+
+#### Servidor:
+```
+action: receive_message | result: success | msg: ...
+action: apuesta_recibida | result: success | cantidad: N
+action: send_ack | result: success | id: ... | msg: {result:success}
+```
+
+
+### Ej7
+
+En este ejercicio se agregó soporte para realizar el sorteo una vez que **todas las agencias notificaron que finalizaron el envío de apuestas**, y permitir que cada una consulte **solo sus propios ganadores**. Se mantuvo el diseño cliente-servidor secuencial, sin introducir concurrencia, pero adaptando el protocolo y la lógica para soportar este flujo de sincronización distribuida.
+
+### Extensión del protocolo
+
+Se incorporaron tres nuevos tipos de mensaje:
+
+| Tipo | Descripción                                  |
+|------|----------------------------------------------|
+| `4`  | Notificación de finalización de envío        |
+| `5`  | Consulta de ganadores por agencia            |
+| `6`  | Respuesta del servidor con los ganadores     |
+
+#### Ejemplo de payloads
+
+- Mensaje tipo `4` (notificación):
+  ```
+  {agency:2}
+  ```
+
+- Mensaje tipo `5` (consulta de ganadores):
+  ```
+  {agency:2}
+  ```
+
+- Respuesta tipo `6` (ganadores disponibles):
+  ```
+  {ganadores:30904465|40222111}
+  ```
+
+- Respuesta tipo `6` (sorteo no realizado aún):
+  ```
+  {result:in_progress}
+  ```
+
+### Decisiones de diseño importantes
+
+- **Coordinación distribuida a través de notificaciones**:  
+  El servidor lleva un registro de las agencias que notificaron finalización (tipo 4). Una vez alcanzado el umbral (`N=3` o `N=5`), se realiza el sorteo utilizando `load_bets(...)` y `has_won(...)`.
+
+- **Polling implementado en el cliente**:  
+  Luego de notificar con un mensaje tipo 4, el cliente inicia un bucle de reintentos periódicos (hasta 10 retries, y cada un loop period configurable) enviando tipo 5 (consulta de ganadores). Si el sorteo aún no se realizó, recibe `{result:in_progress}` y espera un período antes de volver a consultar.
+
+- **Sin bloqueo del servidor**:  
+  Gracias al uso de conexiones cortas y mensajes independientes (en la fase de polling), el servidor no queda bloqueado permanentemente por una sola agencia. Durante el envío de apuestas, el servidor atiende a un cliente hasta que este termina de mandar todas las apuestas. Luego puede atender a otras conexiones (de polling o de otras agencias), manteniendo una arquitectura simple y compatible con el protocolo ya implementado.
+
+### Flujo general del sistema
+
+1. El cliente envía apuestas en batches (tipo 3).
+2. Una vez finalizado el archivo, envía un mensaje tipo 4 notificando que terminó. Hasta este punto se mantiene una única conexión.
+3. El servidor guarda la notificación y, si todas las agencias notificaron, ejecuta el sorteo.
+4. El cliente realiza polling con mensajes tipo 5 hasta que el servidor responde con tipo 6 que contiene los ganadores. Cada uno de estos mensajes se realiza mediante una nueva conexión.
+5. Cuando los ganadores están disponibles, el cliente imprime la cantidad y finaliza su ejecución.
+
+### Cambios en el servidor (Python)
+
+- Se agregó el manejo del mensaje tipo 4. Se almacena la agencia como "notificada" y se responde con un ACK (`{result:success}`).
+- Si la cantidad de agencias notificadas alcanza el umbral configurado, se ejecuta el sorteo y se almacenan los ganadores por agencia.
+- Se agregó el manejo del mensaje tipo 5. Si el sorteo aún no se realizó, se responde `{result:in_progress}`. Caso contrario, se responde con los DNIs ganadores correspondientes a la agencia solicitante.
+
+### Cambios en el cliente (Go)
+
+- Se agregó `sendFinishedNotification(...)` para enviar tipo 4 y esperar el ACK.
+- Se agregó `askForWinners(...)`, que implementa un bucle de polling con reintentos. Si el servidor responde `{result:in_progress}`, se espera y se reintenta.
+- Cuando la respuesta contiene ganadores, se registran en el log y el cliente finaliza.
+
+### Logging estructurado agregado
+
+#### Cliente:
+```
+action: notify_finished | result: success | id: ...
+action: consulta_ganadores | result: in_progress | intento: N/10
+action: consulta_ganadores | result: success | cant_ganadores: 3
+```
+
+#### Servidor:
+```
+action: notify_finished | result: success | agency: 2
+action: sorteo | result: success
+action: consulta_ganadores | result: success | agency: 2
+```
+
+### Ej8
+
+En este ejercicio se abordó la incorporación de **concurrencia en el servidor** para permitir la atención de múltiples clientes en paralelo. Hasta el Ejercicio 7, el servidor procesaba las conexiones de forma secuencial, lo que implicaba que un cliente debía esperar a que se completara la atención del anterior, incluso en operaciones independientes como enviar apuestas o consultar ganadores.
+
+El objetivo de este ejercicio fue modificar el servidor para que sea capaz de atender múltiples conexiones simultáneamente, garantizando a la vez la **consistencia de los datos compartidos**, la **ejecución única del sorteo**, y la **compatibilidad con el protocolo ya definido**.
+
+#### Concurrencia en Python y limitaciones del GIL
+
+Python presenta una limitación importante al momento de implementar concurrencia con `threading`: el **Global Interpreter Lock (GIL)**. El GIL impide que múltiples threads ejecuten bytecode de Python al mismo tiempo dentro de un mismo proceso. Por esta razón, se optó por una solución basada en **`multiprocessing`**, que permite crear procesos completamente separados con su propio GIL y espacio de memoria, logrando así el objetivo de atender 
+clientes en paralelo.
+
+#### Implementación con `multiprocessing`
+
+##### Conexiones paralelas
+
+El servidor fue modificado para aceptar conexiones de forma concurrente utilizando `multiprocessing.Process(...)`. Por cada conexión aceptada, se lanza un nuevo proceso que atiende el mensaje completo del cliente (apuestas, notificación o consulta) y luego finaliza. Esto permite que múltiples clientes puedan estar conectados y enviando mensajes al mismo tiempo sin bloquearse entre sí.
+
+##### Protecciones de concurrencia
+
+Al trabajar con múltiples procesos que acceden a recursos compartidos, se incorporaron los siguientes mecanismos de sincronización:
+
+- **`multiprocessing.Lock`**: utilizado para proteger las escrituras en el archivo de almacenamiento de apuestas. La función `store_bets(...)` no es segura ante accesos concurrentes, por lo que se encapsuló su uso dentro de un `with self._storefile_lock` para evitar condiciones de carrera.
+
+- **`multiprocessing.Value`**: se utilizaron instancias de `Value` para variables de control (`_should_terminate`, `_notified_agencies_count`, `_lottery_done`) que deben ser accedidas y modificadas de forma atómica entre procesos. Este objeto permite encapsular tipos primitivos (`bool`, `int`, etc.) en memoria compartida de forma segura.
+
+##### Diccionario de resultados compartido entre procesos usando `Manager`
+
+Para mantener la estructura `winners_by_agency`, que guarda los ganadores agrupados por agencia usé un dic de Manager. Esta estructura debe ser accesible desde múltiples procesos:
+
+- Proceso A puede realizar el sorteo y escribir ganadores en la estructura.
+- Proceso B puede recibir una consulta de ganadores y leer desde la misma estructura.
+
+Con `multiprocessing.Manager`, se pueden crear **objetos compartidos entre procesos** como `dict`, `list`, etc. Internamente, el `Manager` lanza un **servidor de objetos compartidos** que gestiona el acceso a esos objetos mediante proxies y mecanismos de sincronización.
+
+##### Consistencia del sorteo
+
+Una parte crítica de la lógica es asegurar que el sorteo se ejecute **una sola vez**, incluso si múltiples procesos reciben notificaciones de finalización casi al mismo tiempo. Para esto:
+
+- Se utiliza `self._notified_agencies_count` como contador protegido por `get_lock()` para evitar doble incremento.
+- Se verifica la condición `self._notified_agencies_count.value == self._total_agencies` dentro de un bloque protegido.
+- La ejecución del sorteo (`_run_lottery()`) también está protegida con un lock sobre `self._lottery_done`, que evita que se vuelva a ejecutar.
+
+Esto garantiza que, sin importar el orden en que lleguen las notificaciones, el sorteo se realizará exactamente una vez, y quedará registrado en la estructura compartida de ganadores.
