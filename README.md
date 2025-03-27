@@ -559,3 +559,47 @@ action: notify_finished | result: success | agency: 2
 action: sorteo | result: success
 action: consulta_ganadores | result: success | agency: 2
 ```
+
+### Ej8
+
+En este ejercicio se abordó la incorporación de **concurrencia en el servidor** para permitir la atención de múltiples clientes en paralelo. Hasta el Ejercicio 7, el servidor procesaba las conexiones de forma secuencial, lo que implicaba que un cliente debía esperar a que se completara la atención del anterior, incluso en operaciones independientes como enviar apuestas o consultar ganadores.
+
+El objetivo de este ejercicio fue modificar el servidor para que sea capaz de atender múltiples conexiones simultáneamente, garantizando a la vez la **consistencia de los datos compartidos**, la **ejecución única del sorteo**, y la **compatibilidad con el protocolo ya definido**.
+
+#### Concurrencia en Python y limitaciones del GIL
+
+Python presenta una limitación importante al momento de implementar concurrencia con `threading`: el **Global Interpreter Lock (GIL)**. El GIL impide que múltiples threads ejecuten bytecode de Python al mismo tiempo dentro de un mismo proceso. Por esta razón, se optó por una solución basada en **`multiprocessing`**, que permite crear procesos completamente separados con su propio GIL y espacio de memoria, logrando así el objetivo de atender 
+clientes en paralelo.
+
+#### Implementación con `multiprocessing`
+
+##### Conexiones paralelas
+
+El servidor fue modificado para aceptar conexiones de forma concurrente utilizando `multiprocessing.Process(...)`. Por cada conexión aceptada, se lanza un nuevo proceso que atiende el mensaje completo del cliente (apuestas, notificación o consulta) y luego finaliza. Esto permite que múltiples clientes puedan estar conectados y enviando mensajes al mismo tiempo sin bloquearse entre sí.
+
+##### Protecciones de concurrencia
+
+Al trabajar con múltiples procesos que acceden a recursos compartidos, se incorporaron los siguientes mecanismos de sincronización:
+
+- **`multiprocessing.Lock`**: utilizado para proteger las escrituras en el archivo de almacenamiento de apuestas. La función `store_bets(...)` no es segura ante accesos concurrentes, por lo que se encapsuló su uso dentro de un `with self._storefile_lock` para evitar condiciones de carrera.
+
+- **`multiprocessing.Value`**: se utilizaron instancias de `Value` para variables de control (`_should_terminate`, `_notified_agencies_count`, `_lottery_done`) que deben ser accedidas y modificadas de forma atómica entre procesos. Este objeto permite encapsular tipos primitivos (`bool`, `int`, etc.) en memoria compartida de forma segura.
+
+##### Diccionario de resultados compartido entre procesos usando `Manager`
+
+Para mantener la estructura `winners_by_agency`, que guarda los ganadores agrupados por agencia usé un dic de Manager. Esta estructura debe ser accesible desde múltiples procesos:
+
+- Proceso A puede realizar el sorteo y escribir ganadores en la estructura.
+- Proceso B puede recibir una consulta de ganadores y leer desde la misma estructura.
+
+Con `multiprocessing.Manager`, se pueden crear **objetos compartidos entre procesos** como `dict`, `list`, etc. Internamente, el `Manager` lanza un **servidor de objetos compartidos** que gestiona el acceso a esos objetos mediante proxies y mecanismos de sincronización.
+
+##### Consistencia del sorteo
+
+Una parte crítica de la lógica es asegurar que el sorteo se ejecute **una sola vez**, incluso si múltiples procesos reciben notificaciones de finalización casi al mismo tiempo. Para esto:
+
+- Se utiliza `self._notified_agencies_count` como contador protegido por `get_lock()` para evitar doble incremento.
+- Se verifica la condición `self._notified_agencies_count.value == self._total_agencies` dentro de un bloque protegido.
+- La ejecución del sorteo (`_run_lottery()`) también está protegida con un lock sobre `self._lottery_done`, que evita que se vuelva a ejecutar.
+
+Esto garantiza que, sin importar el orden en que lleguen las notificaciones, el sorteo se realizará exactamente una vez, y quedará registrado en la estructura compartida de ganadores.
